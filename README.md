@@ -1,4 +1,4 @@
-# AIChan
+﻿# AIChan
 
 一个基于 `LangChain + LangGraph` 的模块化 AI 助手示例项目，采用 `uv workspace` 管理多包结构。  
 当前提供命令行交互（CLI）、基础编排层、可插拔推理引擎和工具调用能力。
@@ -10,7 +10,7 @@
 
 ## 架构概览
 
-1. `peripherals`：外设层（I/O 总线），统一承载输入渠道与动作工具能力。
+1. `plugins`：插件层（I/O 总线），统一承载输入渠道与动作工具能力。
 2. `synapse`：编排层，负责上下文拼接、队列调度与能力分发。
 3. `brain`：推理层，基于 LangGraph 执行“推理 -> 调用能力 -> 再推理”。
 4. `memory`：记忆扩展层（当前占位），后续承载长期/外部记忆能力扩展。
@@ -62,7 +62,7 @@ uv run python cli_client.py
 │  └─ system-design.md
 └─ packages
    ├─ core
-   ├─ peripherals
+   ├─ plugins
    ├─ synapse
    ├─ brain
    └─ memory
@@ -73,4 +73,6 @@ uv run python cli_client.py
 - 调整编排策略：`packages/synapse/src/synapse/agent.py`
 - 替换推理流程：`packages/brain/src/brain/brain.py`
 - 扩展记忆存取能力：`packages/memory/src/memory/`
-- 扩展外设能力：`packages/peripherals/src/peripherals/channels/`、`packages/peripherals/src/peripherals/tools/`
+- 扩展插件能力：`packages/plugins/src/plugins/channels/`、`packages/plugins/src/plugins/tools/`
+
+

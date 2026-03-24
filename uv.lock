@@ -1,4 +1,4 @@
-version = 1
+﻿version = 1
 revision = 3
 requires-python = ">=3.10"
 
@@ -8,7 +8,7 @@ members = [
     "brain",
     "core",
     "memory",
-    "peripherals",
+    "plugins",
     "synapse",
 ]
 
@@ -23,7 +23,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "memory" },
-    { name = "peripherals" },
+    { name = "plugins" },
     { name = "synapse" },
     { name = "uvicorn" },
 ]
@@ -36,7 +36,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.2.20" },
     { name = "langchain-openai", specifier = ">=1.1.11" },
     { name = "memory", editable = "packages/memory" },
-    { name = "peripherals", editable = "packages/peripherals" },
+    { name = "plugins", editable = "packages/plugins" },
     { name = "synapse", editable = "packages/synapse" },
     { name = "uvicorn", specifier = ">=0.30.0" },
 ]
@@ -746,9 +746,9 @@ wheels = [
 ]
 
 [[package]]
-name = "peripherals"
+name = "plugins"
 version = "0.1.0"
-source = { editable = "packages/peripherals" }
+source = { editable = "packages/plugins" }
 dependencies = [
     { name = "core" },
     { name = "langchain-core" },
@@ -1536,3 +1536,4 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/43/241f9615bcf8ba8903b3f0432da069e857fc4fd1783bd26183db53c4804b/zstandard-0.25.0-cp314-cp314-win_amd64.whl", hash = "sha256:c19bcdd826e95671065f8692b5a4aa95c52dc7a02a4c5a0cac46deb879a017a2", size = 516118, upload-time = "2025-09-14T22:18:17.849Z" },
     { url = "https://files.pythonhosted.org/packages/f0/ef/da163ce2450ed4febf6467d77ccb4cd52c4c30ab45624bad26ca0a27260c/zstandard-0.25.0-cp314-cp314-win_arm64.whl", hash = "sha256:d7541afd73985c630bafcd6338d2518ae96060075f9463d7dc14cfb33514383d", size = 476940, upload-time = "2025-09-14T22:18:19.088Z" },
 ]
+

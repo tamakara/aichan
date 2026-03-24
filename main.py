@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import uvicorn
 from langchain_openai import ChatOpenAI
@@ -7,23 +7,23 @@ from brain.brain import Brain
 from cli_server import create_app
 from core.config import settings
 from core.logger import logger
-from peripherals.channels.cli import CLIChannelPeripheral
-from peripherals.registry import PeripheralRegistry
-from peripherals.tools.time_tool import CurrentTimeToolPeripheral
+from plugins.channels.cli import CLIChannelPlugin
+from plugins.registry import PluginRegistry
+from plugins.tools.time_tool import CurrentTimeToolPlugin
 from synapse.agent import AgentOrchestrator
 
 
-def register_default_peripherals() -> None:
+def register_default_plugins() -> None:
     """
-    注册系统启动后的默认外设能力。
+    注册系统启动后的默认插件能力。
 
     说明：
     - `cli` 属于交互通道能力（负责把外部负载转成 UserMessage）
     - `get_current_time` 属于工具能力（可被 LLM 调用）
     """
-    PeripheralRegistry.clear()
-    PeripheralRegistry.register("cli", CLIChannelPeripheral())
-    PeripheralRegistry.register("get_current_time", CurrentTimeToolPeripheral())
+    PluginRegistry.clear()
+    PluginRegistry.register(CLIChannelPlugin())
+    PluginRegistry.register(CurrentTimeToolPlugin())
 
 
 def build_orchestrator() -> AgentOrchestrator:
@@ -31,11 +31,11 @@ def build_orchestrator() -> AgentOrchestrator:
     组装核心模块并返回编排器（synapse）实例。
 
     组装顺序：
-    1) 注册默认外设能力
+    1) 注册默认插件能力
     2) 初始化 LLM 并构建 brain
     3) 构建 synapse（AgentOrchestrator）
     """
-    register_default_peripherals()
+    register_default_plugins()
 
     llm = ChatOpenAI(
         api_key=settings.llm_api_key,
@@ -44,7 +44,7 @@ def build_orchestrator() -> AgentOrchestrator:
         temperature=settings.llm_temperature,
     )
 
-    brain = Brain(llm_client=llm, tools=PeripheralRegistry.all_tools())
+    brain = Brain(llm_client=llm, tools=PluginRegistry.all_tools())
     return AgentOrchestrator(brain=brain)
 
 
@@ -72,3 +72,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

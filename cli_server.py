@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -6,14 +6,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.logger import logger
-from peripherals.registry import PeripheralRegistry
+from plugins.registry import PluginRegistry
 from synapse.agent import AgentOrchestrator
 
 
 class ChatRequest(BaseModel):
     """客户端发送到网关的标准请求体。"""
 
-    channel: str = Field(default="cli", description="外设通道名称")
+    channel: str = Field(default="cli", description="插件通道名称")
     content: str = Field(..., description="用户输入内容")
 
 
@@ -29,7 +29,7 @@ def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
 
     约束：
     - 本文件只负责 HTTP 接口、请求/响应模型和错误码映射。
-    - 系统模块组装（peripherals/brain/memory/synapse）由 main.py 提供。
+    - 系统模块组装（plugins/brain/memory/synapse）由 main.py 提供。
     """
     app = FastAPI(
         title="AIChan 聊天网关",
@@ -46,12 +46,12 @@ def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
     def chat(req: ChatRequest) -> ChatResponse:
         """
         聊天主入口：
-        1) 根据 channel 找到外设能力
-        2) 让外设把请求转为标准 UserMessage
+        1) 根据 channel 找到插件能力
+        2) 让插件把请求转为标准 UserMessage
         3) 交给 synapse -> brain 流程处理
-        4) 通过外设返回统一响应
+        4) 通过插件返回统一响应
         """
-        channel = PeripheralRegistry.get(req.channel)
+        channel = PluginRegistry.get(req.channel)
         if channel is None:
             raise HTTPException(status_code=400, detail=f"未知通道: {req.channel}")
 
@@ -78,3 +78,5 @@ def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
         return ChatResponse(reply=str(channel_payload["reply"]))
 
     return app
+
+

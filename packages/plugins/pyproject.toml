@@ -1,7 +1,7 @@
-[project]
-name = "peripherals"
+﻿[project]
+name = "plugins"
 version = "0.1.0"
-description = "Unified peripheral bus for channels and tools"
+description = "Unified plugin bus for channels and tools"
 authors = [
     { name = "tamakara", email = "tamakara@qq.com" }
 ]
@@ -17,3 +17,4 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 core = { workspace = true }
+
