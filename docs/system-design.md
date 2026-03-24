@@ -14,7 +14,7 @@
 
 - `core`：基础能力（配置、日志、接口契约、数据模型）
 - `plugins`：插件总线（渠道 + 工具 + 统一注册）
-- `synapse`：中枢编排（上下文组织、队列调度、结果路由）
+- `nexus`：中枢编排（上下文组织、队列调度、结果路由）
 - `brain`：推理决策（唯一 LLM 交互层）
 - `memory`：记忆存取（长期/短期记忆）
 
@@ -62,7 +62,7 @@ class PluginRegistry:
 ```mermaid
 flowchart LR
     P[plugins]
-    S[synapse]
+    S[nexus]
     B[brain]
     M[memory]
     L[LLM]
@@ -78,8 +78,8 @@ flowchart LR
 约束：
 
 - 只有 `brain` 可以调用 `LLM`。
-- `memory`、`plugins`、`brain` 都由 `synapse` 统一调度。
-- `brain` 的结果必须回传给 `synapse`，由 `synapse` 负责最终回路由。
+- `memory`、`plugins`、`brain` 都由 `nexus` 统一调度。
+- `brain` 的结果必须回传给 `nexus`，由 `nexus` 负责最终回路由。
 
 ## 6. 合并后的优势
 
@@ -93,15 +93,16 @@ flowchart LR
 ## 7. 目标数据流（神经反射）
 
 1. 用户通过 `plugins/channels` 输入消息（例如 CLI）。
-2. `synapse` 接收消息并从 `memory` 拉取上下文切片。
-3. `synapse` 将标准化上下文交给 `brain`。
+2. `nexus` 接收消息并从 `memory` 拉取上下文切片。
+3. `nexus` 将标准化上下文交给 `brain`。
 4. `brain` 调用 `LLM` 推理，必要时通过能力调用触发 `plugins/tools`。
-5. `brain` 将结果回传 `synapse`。
-6. `synapse` 将结果路由回对应 `plugins/channels` 输出。
+5. `brain` 将结果回传 `nexus`。
+6. `nexus` 将结果路由回对应 `plugins/channels` 输出。
 
 ## 8. 迁移说明
 
 - `receptors` 与 `effectors` 的职责已合并到 `plugins`。
 - 仓库中旧包已移除，当前统一以 `plugins` 作为插件层实现与扩展入口。
+
 
 

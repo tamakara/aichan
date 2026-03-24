@@ -1,7 +1,8 @@
 ﻿from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+
+from langchain_core.tools import StructuredTool
 
 class BasePlugin(ABC):
     """
@@ -17,7 +18,7 @@ class BasePlugin(ABC):
         self.description = description
 
     @abstractmethod
-    def get_tool(self) -> Any:
+    def get_tool(self) -> StructuredTool:
         """
         返回该插件对外暴露的唯一多模态工具（Fat Tool）。
         

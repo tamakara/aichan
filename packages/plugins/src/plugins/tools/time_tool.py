@@ -2,7 +2,7 @@
 
 import datetime
 
-from langchain_core.tools import tool, StructuredTool
+from langchain_core.tools import StructuredTool
 
 from plugins.base import BasePlugin
 

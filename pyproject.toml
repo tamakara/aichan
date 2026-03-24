@@ -9,8 +9,8 @@ dependencies = [
     "langchain-core>=1.2.20",
     "langchain-openai>=1.1.11",
     "memory",
+    "nexus",
     "plugins",
-    "synapse",
     "uvicorn>=0.30.0",
 ]
 
@@ -21,6 +21,6 @@ members = ["packages/*"]
 brain = { workspace = true }
 core = { workspace = true }
 memory = { workspace = true }
+nexus = { workspace = true }
 plugins = { workspace = true }
-synapse = { workspace = true }
 

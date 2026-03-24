@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -84,7 +84,7 @@ def main() -> None:
     """
     独立 CLI 客户端入口。
 
-    该进程只负责交互输入输出，不直接依赖 synapse/brain，
+    该进程只负责交互输入输出，不直接依赖 nexus/brain，
     所有请求都通过 HTTP 发给服务端。
     """
     host = (os.getenv("CHAT_SERVER_HOST") or "127.0.0.1").strip() or "127.0.0.1"
@@ -136,3 +136,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

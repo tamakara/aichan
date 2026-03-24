@@ -41,9 +41,9 @@ AIChan/
    │     │  ├─ __init__.py
    │     │  └─ time_tool.py
    │     └─ py.typed
-   ├─ synapse/
+   ├─ nexus/
    │  ├─ pyproject.toml
-   │  └─ src/synapse/
+   │  └─ src/nexus/
    │     ├─ __init__.py
    │     ├─ agent.py
    │     └─ py.typed
@@ -65,7 +65,7 @@ AIChan/
 
 - `core`：共享基础层，提供配置管理、日志、接口契约与通用实体定义。
 - `plugins`：插件层，统一承载交互渠道（channels）和工具能力（tools），通过注册表暴露能力。
-- `synapse`：编排层，负责上下文拼接、请求调度、调用 `brain/plugins` 并回传结果。
+- `nexus`：编排层，负责上下文拼接、请求调度、调用 `brain/plugins` 并回传结果。
 - `brain`：推理层，负责 LLM 推理、工具调用决策和结果生成。
 - `memory`：记忆层占位模块，后续补充详细方案与实现。
 
@@ -74,7 +74,7 @@ AIChan/
 ```mermaid
 flowchart LR
     P[plugins]
-    S[synapse]
+    S[nexus]
     B[brain]
     M[memory]
     L[LLM]
@@ -91,17 +91,17 @@ flowchart LR
 
 - 调用关系图表示运行时职责，不等同于 Python 导入依赖图。
 - `brain` 是唯一允许直接调用 `LLM` 的模块。
-- `plugins`、`brain` 由 `synapse` 统一编排；`memory` 目前仅占位未启用。
-- `brain` 的处理结果必须先回传 `synapse`，再由 `synapse` 进行最终路由。
+- `plugins`、`brain` 由 `nexus` 统一编排；`memory` 目前仅占位未启用。
+- `brain` 的处理结果必须先回传 `nexus`，再由 `nexus` 进行最终路由。
 
 ## 4. 进程与运行拓扑
 
 当前 CLI 对话采用“服务端 + 客户端”双进程模式：
 
-1. 服务端启动器：`main.py`，负责模块组装（plugins/brain/synapse）并启动 `uvicorn`。
+1. 服务端启动器：`main.py`，负责模块组装（plugins/brain/nexus）并启动 `uvicorn`。
 2. 服务端接口：`cli_server.py`（FastAPI），对外提供 `/chat` 等接口，不承担模块组装。
 3. 客户端：`cli_client.py`，负责终端输入输出，并通过 HTTP 调用服务端。
-4. 服务端内部：`cli_server.py -> synapse -> (brain / plugins)`。
+4. 服务端内部：`cli_server.py -> nexus -> (brain / plugins)`。
 
 ## 5. 关键文件映射
 
@@ -109,8 +109,9 @@ flowchart LR
 | --- | --- | --- |
 | `core` | `packages/core/src/core/config.py`、`packages/core/src/core/interfaces.py`、`packages/core/src/core/logger.py` | 已落地并在多包复用 |
 | `plugins` | `packages/plugins/src/plugins/registry.py`、`packages/plugins/src/plugins/channels/cli.py`、`packages/plugins/src/plugins/tools/time_tool.py` | 已落地，支持能力注册与默认工具 |
-| `synapse` | `packages/synapse/src/synapse/agent.py` | 已落地，承担统一编排入口 |
+| `nexus` | `packages/nexus/src/nexus/agent.py` | 已落地，承担统一编排入口 |
 | `brain` | `packages/brain/src/brain/brain.py` | 已落地，负责推理与工具调用策略 |
 | `memory` | `packages/memory/src/memory/store.py` | 占位中，暂未启用具体实现 |
+
 
 

@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from typing import Any
+from langchain_core.tools import StructuredTool
 
 from plugins.base import BasePlugin
 
@@ -21,15 +21,15 @@ class PluginRegistry:
         return cls._pool.get(name)
 
     @classmethod
-    def all_tools(cls) -> list[Any]:
+    def all_tools(cls) -> list[StructuredTool]:
         """
         收集所有可供 LLM 绑定的工具能力。
 
-        约定：仅当插件实现了 `to_tool_schema()` 且返回非 None 时，才视为工具。
+        约定：仅当插件实现了 `to_tool()` 且返回 StructuredTool 时，才视为工具。
         """
-        tools: list[Any] = []
+        tools: list[StructuredTool] = []
         for plugin in cls._pool.values():
-            tool_schema = plugin.to_tool_schema()
+            tool_schema = plugin.get_tool()
             if tool_schema is not None:
                 tools.append(tool_schema)
         return tools

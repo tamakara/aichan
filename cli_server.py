@@ -1,13 +1,14 @@
 ﻿from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.logger import logger
+from nexus.agent import AgentOrchestrator
 from plugins.registry import PluginRegistry
-from synapse.agent import AgentOrchestrator
 
 
 class ChatRequest(BaseModel):
@@ -23,18 +24,22 @@ class ChatResponse(BaseModel):
     reply: str = Field(..., description="模型最终回复文本")
 
 
-def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
+def create_app(
+    orchestrator: AgentOrchestrator,
+    lifespan: Callable[[FastAPI], AsyncIterator[None]] | None = None,
+) -> FastAPI:
     """
     创建 CLI 网关应用。
 
     约束：
     - 本文件只负责 HTTP 接口、请求/响应模型和错误码映射。
-    - 系统模块组装（plugins/brain/memory/synapse）由 main.py 提供。
+    - 系统模块组装（plugins/brain/memory/nexus）由 main.py 提供。
     """
     app = FastAPI(
         title="AIChan 聊天网关",
         description="AIChan 双进程模式下的聊天服务入口",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     @app.get("/health")
@@ -48,7 +53,7 @@ def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
         聊天主入口：
         1) 根据 channel 找到插件能力
         2) 让插件把请求转为标准 UserMessage
-        3) 交给 synapse -> brain 流程处理
+        3) 交给 nexus -> brain 流程处理
         4) 通过插件返回统一响应
         """
         channel = PluginRegistry.get(req.channel)
@@ -78,5 +83,3 @@ def create_app(orchestrator: AgentOrchestrator) -> FastAPI:
         return ChatResponse(reply=str(channel_payload["reply"]))
 
     return app
-
-

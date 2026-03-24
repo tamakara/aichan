@@ -11,7 +11,7 @@
 ## 架构概览
 
 1. `plugins`：插件层（I/O 总线），统一承载输入渠道与动作工具能力。
-2. `synapse`：编排层，负责上下文拼接、队列调度与能力分发。
+2. `nexus`：编排层，负责上下文拼接、队列调度与能力分发。
 3. `brain`：推理层，基于 LangGraph 执行“推理 -> 调用能力 -> 再推理”。
 4. `memory`：记忆扩展层（当前占位），后续承载长期/外部记忆能力扩展。
 5. `core`：共享基础层，提供配置、日志、接口契约与数据模型。
@@ -63,16 +63,17 @@ uv run python cli_client.py
 └─ packages
    ├─ core
    ├─ plugins
-   ├─ synapse
+   ├─ nexus
    ├─ brain
    └─ memory
 ```
 
 ## 常见自定义点
 
-- 调整编排策略：`packages/synapse/src/synapse/agent.py`
+- 调整编排策略：`packages/nexus/src/nexus/agent.py`
 - 替换推理流程：`packages/brain/src/brain/brain.py`
 - 扩展记忆存取能力：`packages/memory/src/memory/`
 - 扩展插件能力：`packages/plugins/src/plugins/channels/`、`packages/plugins/src/plugins/tools/`
+
 
 
