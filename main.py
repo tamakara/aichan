@@ -24,7 +24,7 @@ def register_default_plugins() -> None:
     注册系统启动后的默认插件能力。
 
     说明：
-    - `cli` 属于交互通道能力（负责把外部负载转成 UserMessage）
+    - `cli` 作为双工通道能力（输入生产 + 输出工具）
     - `get_current_time` 属于工具能力（可被 LLM 调用）
     """
     PluginRegistry.clear()
@@ -57,13 +57,28 @@ def build_orchestrator() -> AgentOrchestrator:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     heartbeat_task = asyncio.create_task(nexus_hub.start_heartbeat())
+    cli_listener_task: asyncio.Task[None] | None = None
+    cli_plugin = PluginRegistry.get("cli")
+
+    if isinstance(cli_plugin, CLIChannelPlugin):
+        cli_listener_task = asyncio.create_task(cli_plugin.start_listening())
+    else:
+        logger.warning("CLI 插件未注册，终端输入监听不会启动。")
+
     try:
         yield
     finally:
         nexus_hub.stop_heartbeat()
+        if isinstance(cli_plugin, CLIChannelPlugin):
+            cli_plugin.stop_listening()
+
         heartbeat_task.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat_task
+        if cli_listener_task is not None:
+            cli_listener_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cli_listener_task
 
 
 def main() -> None:
@@ -78,7 +93,7 @@ def main() -> None:
         settings.chat_server_host,
         settings.chat_server_port,
     )
-    logger.info("请在另一个终端运行 `uv run python cli_client.py` 发起对话。")
+    logger.info("CLI 输入监听将随服务生命周期自动启动。")
 
     uvicorn.run(
         app,

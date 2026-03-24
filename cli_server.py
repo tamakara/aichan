@@ -1,13 +1,13 @@
 ﻿from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.logger import logger
 from nexus.agent import AgentOrchestrator
+from nexus.hub import nexus_hub
 from plugins.registry import PluginRegistry
 
 
@@ -25,7 +25,7 @@ class ChatResponse(BaseModel):
 
 
 def create_app(
-    orchestrator: AgentOrchestrator,
+    _orchestrator: AgentOrchestrator,
     lifespan: Callable[[FastAPI], AsyncIterator[None]] | None = None,
 ) -> FastAPI:
     """
@@ -34,6 +34,7 @@ def create_app(
     约束：
     - 本文件只负责 HTTP 接口、请求/响应模型和错误码映射。
     - 系统模块组装（plugins/brain/memory/nexus）由 main.py 提供。
+    - 在 Pull 架构下，HTTP 入口只负责把信号推入 Nexus 队列。
     """
     app = FastAPI(
         title="AIChan 聊天网关",
@@ -48,23 +49,27 @@ def create_app(
         return {"status": "ok"}
 
     @app.post("/chat", response_model=ChatResponse)
-    def chat(req: ChatRequest) -> ChatResponse:
+    async def chat(req: ChatRequest) -> ChatResponse:
         """
         聊天主入口：
-        1) 根据 channel 找到插件能力
-        2) 让插件把请求转为标准 UserMessage
-        3) 交给 nexus -> brain 流程处理
-        4) 通过插件返回统一响应
+        1) 校验 channel 是否已注册
+        2) 将输入作为神经信号推送到 Nexus 中央队列
+        3) 立即返回已入队状态，由 Brain 在后台消费
         """
         channel = PluginRegistry.get(req.channel)
         if channel is None:
             raise HTTPException(status_code=400, detail=f"未知通道: {req.channel}")
 
-        payload: dict[str, Any] = req.model_dump()
-
         try:
-            user_message = channel.to_user_message(payload)
-            reply = orchestrator.process_message(user_message)
+            content = req.content.strip()
+            if not content:
+                raise ValueError("content 不能为空")
+
+            await nexus_hub.push_signal(
+                source=req.channel,
+                content=content,
+                metadata={"transport": "http"},
+            )
         except ValueError as exc:
             # 输入参数不完整或格式不合法时返回 400。
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -72,14 +77,6 @@ def create_app(
             logger.exception(f"聊天处理失败：{exc}")
             raise HTTPException(status_code=500, detail="聊天处理失败") from exc
 
-        # 通道必须实现 from_ai_response，并返回包含 reply 字段的结构。
-        channel_payload = channel.from_ai_response(reply)
-        if "reply" not in channel_payload:
-            raise HTTPException(
-                status_code=500,
-                detail=f"通道 `{req.channel}` 响应格式错误：缺少 reply 字段",
-            )
-
-        return ChatResponse(reply=str(channel_payload["reply"]))
+        return ChatResponse(reply="queued")
 
     return app

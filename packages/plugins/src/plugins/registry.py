@@ -25,7 +25,7 @@ class PluginRegistry:
         """
         收集所有可供 LLM 绑定的工具能力。
 
-        约定：仅当插件实现了 `to_tool()` 且返回 StructuredTool 时，才视为工具。
+        约定：插件统一通过 `get_tool()` 暴露工具能力。
         """
         tools: list[StructuredTool] = []
         for plugin in cls._pool.values():
@@ -38,5 +38,4 @@ class PluginRegistry:
     def clear(cls) -> None:
         """清空注册表，常用于服务重启或单元测试隔离。"""
         cls._pool.clear()
-
 
