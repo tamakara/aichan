@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import time
-
 from core.entities import AgentSignal, ChannelMessage
 from core.logger import logger
-from nexus.agent import Agent
+from nexus.hub import NexusHub
 from plugins.base import ChannelPlugin
 
 
@@ -41,31 +39,34 @@ def print_channel_message(message: ChannelMessage) -> None:
             print(f"  {line}")
 
 
-def flush_channel_updates(channel: ChannelPlugin, since_id: int, elapsed_seconds: float) -> int:
+def flush_channel_updates(
+    channel: ChannelPlugin,
+    since_id: int,
+    show_empty: bool = False,
+) -> tuple[int, int]:
     updates = list_channel_messages(channel=channel, since_id=since_id)
     if not updates:
-        print("AIChan > （无新增消息）")
-        return since_id
+        if show_empty:
+            print("AIChan > （无新增消息）")
+        return since_id, 0
 
     newest_id = since_id
-    printed_any = False
+    printed_count = 0
     for message in updates:
         newest_id = max(newest_id, message.message_id)
         if message.role != "user":
             print_channel_message(message)
-            printed_any = True
+            printed_count += 1
 
-    if printed_any:
-        print(f"[耗时 {elapsed_seconds:.1f}s]")
-
-    return newest_id
+    return newest_id, printed_count
 
 
-def run_cli_loop(agent: Agent, channel: ChannelPlugin) -> None:
+def run_cli_loop(hub: NexusHub, channel: ChannelPlugin) -> None:
     print_intro(channel_name=channel.name)
     last_seen_id = 0
 
     while True:
+        last_seen_id, _ = flush_channel_updates(channel=channel, since_id=last_seen_id)
         try:
             text = input("\n你 > ").strip()
         except KeyboardInterrupt:
@@ -81,15 +82,14 @@ def run_cli_loop(agent: Agent, channel: ChannelPlugin) -> None:
 
         try:
             send_channel_message(channel=channel, role="user", content=text)
-            print("AIChan 思考中...")
-            started_at = time.perf_counter()
-            agent.process_signal(AgentSignal(channel=channel.name))
-            elapsed_seconds = time.perf_counter() - started_at
-            last_seen_id = flush_channel_updates(
+            hub.push_signal(AgentSignal(channel=channel.name))
+            print("AIChan > 已入队，处理中（可继续输入）")
+            last_seen_id, printed_count = flush_channel_updates(
                 channel=channel,
                 since_id=last_seen_id,
-                elapsed_seconds=elapsed_seconds,
             )
+            if printed_count == 0:
+                print("AIChan > （暂无新回复）")
         except KeyboardInterrupt:
             print("\n\n推理已中断，AIChan CLI 已退出。")
             break

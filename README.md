@@ -1,13 +1,14 @@
 ﻿# AIChan
 
 一个基于 `LangChain + LangGraph` 的模块化 AI 助手示例项目，采用 `uv workspace` 管理多包结构。  
-当前默认启动模式为单进程交互式 CLI：终端输入由 `main.py` 直接交给 `Agent` 推理并回显结果。
+当前默认启动模式为单进程交互式 CLI：终端输入先入通道并发送到 `NexusHub` 队列，再由 heartbeat 调度 `Agent` 推理并回写结果。
 
 ## 项目文档
 
 - 0号文档（边界说明）：[docs/0.boundary.md](docs/0.boundary.md)
 - 1号文档（设计文档）：[docs/1.system-design.md](docs/1.system-design.md)
 - 2号文档（架构文档）：[docs/2.project-structure.md](docs/2.project-structure.md)
+- 3号文档（消息闭环）：[docs/3.message-loop.md](docs/3.message-loop.md)
 
 ## 架构概览
 
@@ -44,7 +45,7 @@ uv sync
 uv run python main.py
 ```
 
-启动后可直接在当前终端输入消息，程序会打印模型回复与本轮耗时。
+启动后可直接在当前终端输入消息；消息会异步入队并由后台心跳处理，CLI 以增量方式刷新回复。
 
 ## 目录结构
 
@@ -56,7 +57,8 @@ uv run python main.py
 ├─ docs
 │  ├─ 0.boundary.md
 │  ├─ 1.system-design.md
-│  └─ 2.project-structure.md
+│  ├─ 2.project-structure.md
+│  └─ 3.message-loop.md
 └─ packages
    ├─ core
    ├─ plugins
@@ -71,6 +73,3 @@ uv run python main.py
 - 替换推理流程：`packages/brain/src/brain/brain.py`
 - 扩展记忆存取能力：`packages/memory/src/memory/`
 - 扩展双工插件能力：`packages/plugins/src/plugins/channels/`、`packages/plugins/src/plugins/tools/`
-
-
-

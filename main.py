@@ -7,6 +7,7 @@ from brain.brain import Brain
 from core.config import settings
 from core.logger import logger
 from nexus.agent import Agent
+from nexus.hub import nexus_hub
 from plugins.channels.cli import CLIChannelPlugin
 from plugins.registry import PluginRegistry
 from plugins.tools.time_tool import CurrentTimeToolPlugin
@@ -43,7 +44,6 @@ def build_agent() -> Agent:
         temperature=settings.llm_temperature,
     )
 
-    # 仅工具插件会绑定到 LLM；通道插件不参与 LLM 工具调用。
     brain = Brain(llm_client=llm, tools=PluginRegistry.all_tools())
     return Agent(brain=brain)
 
@@ -61,8 +61,14 @@ def main() -> None:
     """
     agent = build_agent()
     cli_channel = resolve_cli_channel()
+    nexus_hub.bind_agent(agent)
+    nexus_hub.start_heartbeat()
     logger.info("AIChan CLI 已启动，模型: {}", settings.llm_model_name)
-    run_cli_loop(agent=agent, channel=cli_channel)
+
+    try:
+        run_cli_loop(hub=nexus_hub, channel=cli_channel)
+    finally:
+        nexus_hub.stop_heartbeat(wait=True)
 
 
 if __name__ == "__main__":
