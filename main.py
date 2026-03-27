@@ -26,9 +26,10 @@ def register_plugins() -> None:
     PluginRegistry.register(CLIChannelPlugin())
     PluginRegistry.register(CurrentTimeToolPlugin())
 
-
-def build_signal_processor() -> SignalProcessor:
-    """组装核心模块并返回 SignalProcessor。"""
+def main() -> None:
+    """
+    本地启动入口：运行 AIChan 核心并内嵌启动 CLI Channel Server。
+    """
     register_plugins()
 
     llm = ChatOpenAI(
@@ -37,32 +38,25 @@ def build_signal_processor() -> SignalProcessor:
         model=settings.llm_model_name,
         temperature=settings.llm_temperature,
     )
-
-    agent_runtime = Agent(llm_client=llm, tools=PluginRegistry.all_tools())
-    return SignalProcessor(agent_runtime=agent_runtime)
-
-
-def main() -> None:
-    """
-    本地启动入口：运行 AIChan 核心并内嵌启动 CLI Channel Server。
-    """
-    signal_processor = build_signal_processor()
+    agent = Agent(llm_client=llm, tools=PluginRegistry.all_tools())
+    signal_processor = SignalProcessor(agent_runtime=agent)
     signal_hub = SignalHub(signal_processor=signal_processor)
     signal_hub.start_heartbeat()
 
-    cli_server = CLIServerRuntime()
-    cli_unread_poller: CLIUnreadPoller | None = None
-    try:
-        cli_server.start()
-        plugin = PluginRegistry.get("cli")
-        if not isinstance(plugin, CLIChannelPlugin):
-            raise RuntimeError("CLIChannelPlugin 未注册")
+    
+    plugin = PluginRegistry.get("cli")
+    if not isinstance(plugin, CLIChannelPlugin):
+        raise RuntimeError("CLIChannelPlugin 未注册")
 
-        cli_unread_poller = CLIUnreadPoller(
+    cli_server = CLIServerRuntime()
+    cli_unread_poller = CLIUnreadPoller(
             cli_channel=plugin,
             signal_hub=signal_hub,
             interval_seconds=1.0,
         )
+    
+    try:
+        cli_server.start()
         cli_unread_poller.start()
 
         logger.info("AIChan 服务已启动，模型: {}", settings.llm_model_name)
