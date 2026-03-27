@@ -3,9 +3,8 @@ from __future__ import annotations
 import time
 
 from agent.agent import Agent
-from langchain_core.messages import HumanMessage, SystemMessage
 
-from core.entities import AgentSignal
+from core.entities import AgentSignal, ChannelMessage
 from core.logger import logger
 from plugins.base import ChannelPlugin
 from plugins.registry import PluginRegistry
@@ -14,12 +13,8 @@ from plugins.registry import PluginRegistry
 class SignalProcessor:
     """信号处理器：根据通道信号拉取消息并驱动 Agent 推理。"""
 
-    def __init__(self, agent_runtime: Agent):
-        self._agent_runtime = agent_runtime
-        # system_prompt 是角色与行为边界的固定注入点。
-        self.system_prompt = SystemMessage(
-            content="你叫 AIChan，是一个傲娇但能力超强的天才黑客少女。回答问题时要带有二次元傲娇属性，称呼用户为'笨蛋'，但最后总是会完美、专业地解决用户的问题。"
-        )
+    def __init__(self, agent: Agent):
+        self._agent = agent
         # 每个通道最后处理到的用户消息 ID。
         self._last_processed_user_message_id: dict[str, int] = {}
 
@@ -29,16 +24,15 @@ class SignalProcessor:
             raise ValueError(f"未知通道或非通道插件: {channel_name}")
         return plugin
 
-    def _think_for_user_content(
-        self,
-        content: str,
-        trace_id: str | None = None,
-    ) -> str:
-        context = [self.system_prompt, HumanMessage(content=content)]
-        return self._agent_runtime.think(
-            context_messages=context,
-            trace_id=trace_id,
-        )
+    @staticmethod
+    def _split_old_new_messages(
+        all_messages: list[ChannelMessage],
+        last_processed_id: int,
+    ) -> tuple[list[ChannelMessage], list[ChannelMessage]]:
+        ordered_messages = sorted(all_messages, key=lambda m: m.message_id)
+        old_messages = [m for m in ordered_messages if m.message_id <= last_processed_id]
+        new_messages = [m for m in ordered_messages if m.message_id > last_processed_id]
+        return old_messages, new_messages
 
     def process_signal(
         self,
@@ -50,10 +44,10 @@ class SignalProcessor:
 
         执行步骤：
         1) 根据 signal.channel 定位通道插件
-        2) 从该通道拉取新消息
-        3) 对新增 user 消息逐条推理并回写 assistant 消息
+        2) 拉取通道消息并拆分为 old/new 列表
+        3) 将 old/new 列表一次性传递给 agent 推理并回写 assistant 消息
 
-        返回值：本次处理的 user 消息条数。
+        返回值：本次处理的新 user 消息条数。
         """
         trace_prefix = signal_id or f"{signal.channel}#manual"
         started_at = time.perf_counter()
@@ -71,24 +65,26 @@ class SignalProcessor:
         )
         last_processed_id = self._last_processed_user_message_id.get(signal.channel, 0)
         logger.info(
-            "📥 [SignalProcessor] signal_id={} 拉取增量消息，since_id={}",
+            "📥 [SignalProcessor] signal_id={} 拉取消息并拆分 old/new，last_processed_user_message_id={}",
             trace_prefix,
             last_processed_id,
         )
 
-        messages = channel.list_messages(since_id=last_processed_id)
-        pending_user_messages = [
-            msg
-            for msg in messages
-            if msg.role == "user" and msg.message_id > last_processed_id
-        ]
+        all_messages = channel.list_messages(since_id=0)
+        old_messages, new_messages = self._split_old_new_messages(
+            all_messages=all_messages,
+            last_processed_id=last_processed_id,
+        )
+        pending_user_messages = [msg for msg in new_messages if msg.role == "user"]
         latest_message_id = (
-            max((message.message_id for message in messages), default=last_processed_id)
+            max((message.message_id for message in all_messages), default=last_processed_id)
         )
         logger.info(
-            "📥 [SignalProcessor] signal_id={} 拉取完成，消息总数={}，待处理user消息={}，latest_message_id={}",
+            "📥 [SignalProcessor] signal_id={} 拉取完成，all={}，old={}，new={}，待处理user={}，latest_message_id={}",
             trace_prefix,
-            len(messages),
+            len(all_messages),
+            len(old_messages),
+            len(new_messages),
             len(pending_user_messages),
             latest_message_id,
         )
@@ -103,45 +99,50 @@ class SignalProcessor:
             return 0
 
         total_pending = len(pending_user_messages)
-        for index, user_msg in enumerate(pending_user_messages, start=1):
-            msg_trace_id = (
-                f"{trace_prefix}:user#{user_msg.message_id}:{index}/{total_pending}"
-            )
-            think_started_at = time.perf_counter()
-            logger.info(
-                "🧠 [SignalProcessor] trace_id={} 开始推理，用户消息长度={}字符",
-                msg_trace_id,
-                len(user_msg.content),
-            )
-            reply = self._think_for_user_content(
-                content=user_msg.content,
-                trace_id=msg_trace_id,
-            )
-            think_elapsed_ms = int((time.perf_counter() - think_started_at) * 1000)
-            logger.info(
-                "🧠 [SignalProcessor] trace_id={} 推理完成，回复长度={}字符，耗时={}ms",
-                msg_trace_id,
-                len(reply),
-                think_elapsed_ms,
-            )
+        msg_trace_id = (
+            f"{trace_prefix}:batch_user#{pending_user_messages[0].message_id}"
+            f"-{pending_user_messages[-1].message_id}:count={total_pending}"
+        )
+        think_started_at = time.perf_counter()
+        logger.info(
+            "🧠 [SignalProcessor] trace_id={} 开始批量推理，old={}，new={}，new_user={}",
+            msg_trace_id,
+            len(old_messages),
+            len(new_messages),
+            total_pending,
+        )
+        reply = self._agent.think(
+            old_messages=old_messages,
+            new_messages=new_messages,
+            trace_id=msg_trace_id,
+        )
+        think_elapsed_ms = int((time.perf_counter() - think_started_at) * 1000)
+        logger.info(
+            "🧠 [SignalProcessor] trace_id={} 批量推理完成，回复长度={}字符，耗时={}ms",
+            msg_trace_id,
+            len(reply),
+            think_elapsed_ms,
+        )
 
-            send_started_at = time.perf_counter()
-            sent_message = channel.send_message(role="assistant", content=reply)
-            send_elapsed_ms = int((time.perf_counter() - send_started_at) * 1000)
-            logger.info(
-                "📤 [SignalProcessor] trace_id={} 回复已写回通道 '{}'，assistant_message_id={}，耗时={}ms",
-                msg_trace_id,
-                sent_message.channel,
-                sent_message.message_id,
-                send_elapsed_ms,
-            )
-            self._last_processed_user_message_id[signal.channel] = user_msg.message_id
-            logger.info(
-                "🧷 [SignalProcessor] signal_id={} 更新通道 '{}' 的 last_processed_user_message_id={}",
-                trace_prefix,
-                signal.channel,
-                user_msg.message_id,
-            )
+        send_started_at = time.perf_counter()
+        sent_message = channel.send_message(role="assistant", content=reply)
+        send_elapsed_ms = int((time.perf_counter() - send_started_at) * 1000)
+        logger.info(
+            "📤 [SignalProcessor] trace_id={} 回复已写回通道 '{}'，assistant_message_id={}，耗时={}ms",
+            msg_trace_id,
+            sent_message.channel,
+            sent_message.message_id,
+            send_elapsed_ms,
+        )
+
+        latest_user_message_id = max(msg.message_id for msg in pending_user_messages)
+        self._last_processed_user_message_id[signal.channel] = latest_user_message_id
+        logger.info(
+            "🧷 [SignalProcessor] signal_id={} 更新通道 '{}' 的 last_processed_user_message_id={}",
+            trace_prefix,
+            signal.channel,
+            latest_user_message_id,
+        )
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(

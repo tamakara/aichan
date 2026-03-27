@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from cli_server import CLI_SERVER_BASE_URL, CLIServerRuntime
 from core.config import settings
 from core.logger import logger
-from hub.cli_unread_poller import CLIUnreadPoller
+from hub.cli_sse_listener import CLIMessageSSEListener
 from hub.signal_hub import SignalHub
 from hub.signal_processor import SignalProcessor
 from plugins.channels.cli import CLIChannelPlugin
@@ -39,7 +39,7 @@ def main() -> None:
         temperature=settings.llm_temperature,
     )
     agent = Agent(llm_client=llm, tools=PluginRegistry.all_tools())
-    signal_processor = SignalProcessor(agent_runtime=agent)
+    signal_processor = SignalProcessor(agent=agent)
     signal_hub = SignalHub(signal_processor=signal_processor)
     signal_hub.start_heartbeat()
 
@@ -49,19 +49,19 @@ def main() -> None:
         raise RuntimeError("CLIChannelPlugin 未注册")
 
     cli_server = CLIServerRuntime()
-    cli_unread_poller = CLIUnreadPoller(
-            cli_channel=plugin,
-            signal_hub=signal_hub,
-            interval_seconds=1.0,
-        )
+    cli_sse_listener = CLIMessageSSEListener(
+        channel_name=plugin.name,
+        signal_hub=signal_hub,
+        server_base_url=CLI_SERVER_BASE_URL,
+    )
     
     try:
         cli_server.start()
-        cli_unread_poller.start()
+        cli_sse_listener.start()
 
         logger.info("AIChan 服务已启动，模型: {}", settings.llm_model_name)
         logger.info("CLI 外部聊天服务地址: {}", CLI_SERVER_BASE_URL)
-        logger.info("CLI 未读轮询间隔: 1 秒")
+        logger.info("CLI 消息接入方式: SSE (/v1/events)")
         logger.info("请在另一个终端启动客户端: uv run python cli_client.py")
 
         while True:
@@ -69,8 +69,8 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("收到退出信号，正在关闭服务")
     finally:
-        if cli_unread_poller is not None:
-            cli_unread_poller.stop()
+        if cli_sse_listener is not None:
+            cli_sse_listener.stop()
         cli_server.stop(wait=True)
         signal_hub.stop_heartbeat(wait=True)
 

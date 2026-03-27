@@ -50,14 +50,6 @@ class ExternalMessage:
     created_at: str
 
 
-@dataclass(frozen=True)
-class ExternalUnreadStatus:
-    """外部聊天服务未读状态。"""
-
-    ai_unread: bool
-    user_unread: bool
-
-
 class LocalMessageState:
     """客户端本地消息状态。"""
 
@@ -89,7 +81,7 @@ class LocalMessageState:
 
 
 class ExternalServiceClient:
-    """独立客户端 HTTP 封装，不依赖 AICHan 内部模块。"""
+    """独立客户端 HTTP 封装。"""
 
     def __init__(self, server_url: str, timeout_seconds: float = 5.0) -> None:
         self._server_url = normalize_server_url(server_url)
@@ -98,23 +90,6 @@ class ExternalServiceClient:
     def health(self) -> bool:
         raw = self._request_json(method="GET", path="/health")
         return isinstance(raw, dict) and raw.get("ok") is True
-
-    def get_unread_status(self) -> ExternalUnreadStatus:
-        raw = self._request_json(method="GET", path="/v1/status")
-        if not isinstance(raw, dict):
-            raise ExternalServiceError("获取未读状态失败：返回体不是对象")
-
-        ai_unread = raw.get("ai_unread")
-        user_unread = raw.get("user_unread")
-        if not isinstance(ai_unread, bool):
-            raise ExternalServiceError("获取未读状态失败：ai_unread 非法")
-        if not isinstance(user_unread, bool):
-            raise ExternalServiceError("获取未读状态失败：user_unread 非法")
-
-        return ExternalUnreadStatus(
-            ai_unread=ai_unread,
-            user_unread=user_unread,
-        )
 
     def list_messages(self, reader: str, after_id: int = 0) -> list[ExternalMessage]:
         raw = self._request_json(
@@ -127,30 +102,7 @@ class ExternalServiceClient:
 
         messages: list[ExternalMessage] = []
         for item in raw:
-            if not isinstance(item, dict):
-                raise ExternalServiceError("拉取消息失败：列表元素不是对象")
-            raw_id = item.get("id")
-            sender = item.get("sender")
-            text = item.get("text")
-            created_at = item.get("created_at")
-
-            if not isinstance(raw_id, int):
-                raise ExternalServiceError("拉取消息失败：id 非法")
-            if not isinstance(sender, str):
-                raise ExternalServiceError("拉取消息失败：sender 非法")
-            if not isinstance(text, str):
-                raise ExternalServiceError("拉取消息失败：text 非法")
-            if not isinstance(created_at, str):
-                raise ExternalServiceError("拉取消息失败：created_at 非法")
-
-            messages.append(
-                ExternalMessage(
-                    message_id=raw_id,
-                    sender=sender,
-                    text=text,
-                    created_at=created_at,
-                )
-            )
+            messages.append(self.parse_external_message(item))
         return messages
 
     def send_message(self, sender: str, text: str) -> ExternalMessage:
@@ -162,18 +114,24 @@ class ExternalServiceClient:
         if not isinstance(raw, dict):
             raise ExternalServiceError("发送消息失败：返回体不是对象")
 
+        return self.parse_external_message(raw)
+
+    def parse_external_message(self, raw: object) -> ExternalMessage:
+        if not isinstance(raw, dict):
+            raise ExternalServiceError("消息解析失败：返回体不是对象")
+
         raw_id = raw.get("id")
         raw_sender = raw.get("sender")
         raw_text = raw.get("text")
         created_at = raw.get("created_at")
         if not isinstance(raw_id, int):
-            raise ExternalServiceError("发送消息失败：id 非法")
+            raise ExternalServiceError("消息解析失败：id 非法")
         if not isinstance(raw_sender, str):
-            raise ExternalServiceError("发送消息失败：sender 非法")
+            raise ExternalServiceError("消息解析失败：sender 非法")
         if not isinstance(raw_text, str):
-            raise ExternalServiceError("发送消息失败：text 非法")
+            raise ExternalServiceError("消息解析失败：text 非法")
         if not isinstance(created_at, str):
-            raise ExternalServiceError("发送消息失败：created_at 非法")
+            raise ExternalServiceError("消息解析失败：created_at 非法")
 
         return ExternalMessage(
             message_id=raw_id,
@@ -181,6 +139,10 @@ class ExternalServiceClient:
             text=raw_text,
             created_at=created_at,
         )
+
+    def build_events_url(self, reader: str, after_id: int = 0) -> str:
+        query = parse.urlencode({"reader": reader, "after_id": after_id})
+        return f"{self._server_url}/v1/events?{query}"
 
     def _request_json(
         self,
@@ -236,8 +198,7 @@ class CLIUserInterface:
             history=InMemoryHistory(),
             auto_suggest=AutoSuggestFromHistory(),
             complete_while_typing=False,
-            enable_history_search=True,
-            erase_when_done=True,
+            enable_history_search=True
         )
 
     def print_intro(self, server_url: str) -> None:
@@ -249,6 +210,7 @@ class CLIUserInterface:
         )
         print_formatted_text("通信对象: user <-> ai", style=self._style)
         print_formatted_text(f"服务地址: {server_url}", style=self._style)
+        print_formatted_text("消息同步: SSE (/v1/events)", style=self._style)
         print_formatted_text(
             "提示    : 输入消息后回车发送，/exit 退出，按 Ctrl+C 退出",
             style=self._style,
@@ -301,18 +263,24 @@ class CLIUserInterface:
     def print_error_message(self, text: str) -> None:
         content = html.escape(text)
         print_formatted_text(
-            HTML(f"<error>AIChan</error> > {content}"),
+            HTML(f"<error>error</error> > {content}"),
             style=self._style,
         )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="独立 CLI 客户端（可脱离 AICHan 运行）")
+    parser = argparse.ArgumentParser(description="独立 CLI 客户端")
     parser.add_argument(
-        "--poll-interval",
+        "--sse-reconnect-delay",
         type=float,
         default=1.0,
-        help="实时同步轮询间隔秒数",
+        help="SSE 断线后重连等待秒数",
+    )
+    parser.add_argument(
+        "--sse-timeout",
+        type=float,
+        default=30.0,
+        help="SSE 连接 socket 超时时间（秒）",
     )
     parser.add_argument(
         "--http-timeout",
@@ -321,48 +289,105 @@ def parse_args() -> argparse.Namespace:
         help="HTTP 请求超时时间（秒）",
     )
     args = parser.parse_args()
-    if args.poll_interval <= 0:
-        parser.error("--poll-interval 必须大于 0")
+    if args.sse_reconnect_delay <= 0:
+        parser.error("--sse-reconnect-delay 必须大于 0")
+    if args.sse_timeout <= 0:
+        parser.error("--sse-timeout 必须大于 0")
     return args
 
 
-def sync_messages_once(
-    client: ExternalServiceClient,
-    state: LocalMessageState,
-    force_pull: bool = False,
-) -> list[ExternalMessage]:
-    if not force_pull:
-        status = client.get_unread_status()
-        if not status.user_unread:
-            return []
-
-    updates = client.list_messages(reader="user", after_id=state.last_seen_id)
-    if not updates:
-        return []
-    return state.merge_new_messages(updates)
-
-
-def start_sync_worker(
+def start_sse_sync_worker(
     client: ExternalServiceClient,
     state: LocalMessageState,
     ui: CLIUserInterface,
-    poll_interval: float,
     stop_event: threading.Event,
+    reconnect_delay_seconds: float,
+    sse_timeout_seconds: float,
 ) -> threading.Thread:
+    def _handle_sse_event(
+        event_id: str | None,
+        event_name: str,
+        data_lines: list[str],
+    ) -> int | None:
+        if event_name != "message" or not data_lines:
+            return None
+
+        try:
+            payload = json.loads("\n".join(data_lines))
+            message = client.parse_external_message(payload)
+        except (json.JSONDecodeError, ExternalServiceError):
+            ui.print_error_message("实时同步失败：收到非法 SSE 消息事件")
+            return None
+
+        new_messages = state.merge_new_messages([message])
+        for item in new_messages:
+            ui.print_synced_message(item)
+
+        return message.message_id
+
     def _run() -> None:
+        last_id = state.last_seen_id
         while not stop_event.is_set():
             try:
-                new_messages = sync_messages_once(client=client, state=state)
-                for message in new_messages:
-                    ui.print_synced_message(message)
-            except ExternalServiceError as exc:
+                url = client.build_events_url(reader="user", after_id=last_id)
+                req = request.Request(
+                    url=url,
+                    headers={"Accept": "text/event-stream"},
+                    method="GET",
+                )
+                with request.urlopen(req, timeout=sse_timeout_seconds) as resp:
+                    event_id: str | None = None
+                    event_name = "message"
+                    data_lines: list[str] = []
+                    for raw_line in resp:
+                        if stop_event.is_set():
+                            return
+
+                        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                        if line == "":
+                            handled_id = _handle_sse_event(
+                                event_id=event_id,
+                                event_name=event_name,
+                                data_lines=data_lines,
+                            )
+                            if handled_id is not None:
+                                last_id = max(last_id, handled_id)
+                            event_id = None
+                            event_name = "message"
+                            data_lines = []
+                            continue
+
+                        if line.startswith(":"):
+                            continue
+
+                        field, sep, value = line.partition(":")
+                        if not sep:
+                            continue
+                        if value.startswith(" "):
+                            value = value[1:]
+
+                        if field == "id":
+                            event_id = value
+                        elif field == "event":
+                            event_name = value
+                        elif field == "data":
+                            data_lines.append(value)
+
+                    handled_id = _handle_sse_event(
+                        event_id=event_id,
+                        event_name=event_name,
+                        data_lines=data_lines,
+                    )
+                    if handled_id is not None:
+                        last_id = max(last_id, handled_id)
+            except (ExternalServiceError, error.URLError) as exc:
                 ui.print_error_message(f"实时同步失败：{exc}")
             finally:
-                stop_event.wait(poll_interval)
+                stop_event.wait(reconnect_delay_seconds)
 
     worker = threading.Thread(
         target=_run,
-        name="cli-client-sync",
+        name="cli-client-sse-sync",
         daemon=True,
     )
     worker.start()
@@ -394,15 +419,12 @@ def run_cli_client() -> None:
     ui.print_intro(server_url=server_url)
     state = LocalMessageState()
     stop_event = threading.Event()
-    sync_worker: threading.Thread | None = None
+    sse_worker: threading.Thread | None = None
 
     try:
         try:
-            initial_messages = sync_messages_once(
-                client=client,
-                state=state,
-                force_pull=True,
-            )
+            initial_messages = client.list_messages(reader="user", after_id=state.last_seen_id)
+            initial_messages = state.merge_new_messages(initial_messages)
         except ExternalServiceError as exc:
             ui.print_error_message(f"启动同步失败：{exc}")
             initial_messages = []
@@ -410,12 +432,13 @@ def run_cli_client() -> None:
             ui.print_synced_message(message)
 
         with patch_stdout():
-            sync_worker = start_sync_worker(
+            sse_worker = start_sse_sync_worker(
                 client=client,
                 state=state,
                 ui=ui,
-                poll_interval=args.poll_interval,
                 stop_event=stop_event,
+                reconnect_delay_seconds=args.sse_reconnect_delay,
+                sse_timeout_seconds=args.sse_timeout,
             )
             while True:
                 try:
@@ -440,8 +463,8 @@ def run_cli_client() -> None:
                     ui.print_error_message(f"发送失败：{exc}")
     finally:
         stop_event.set()
-        if sync_worker is not None and sync_worker.is_alive():
-            sync_worker.join(timeout=2.0)
+        if sse_worker is not None and sse_worker.is_alive():
+            sse_worker.join(timeout=2.0)
 
 
 if __name__ == "__main__":

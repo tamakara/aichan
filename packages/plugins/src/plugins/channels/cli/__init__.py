@@ -3,7 +3,6 @@ from plugins.channels.cli.models import (
     CLIChannelMessage,
     CLIChannelReader,
     CLIChannelSender,
-    CLIChannelUnreadStatus,
     CLI_CHANNEL_NAME,
     DEFAULT_CLI_SERVER_BASE_URL,
 )
@@ -15,7 +14,6 @@ __all__ = [
     "CLIChannelSender",
     "CLIChannelReader",
     "CLIChannelMessage",
-    "CLIChannelUnreadStatus",
     "CLIMessageServiceError",
     "CLIMessageServiceClient",
     "CLIChannelPlugin",

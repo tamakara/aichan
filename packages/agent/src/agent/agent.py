@@ -2,13 +2,13 @@ import time
 from typing import Annotated, List, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from core.entities import ChannelMessage
 from core.logger import logger
+from agent.prompt_builder import build_context_messages
 
 
 class AgentState(TypedDict):
@@ -21,14 +21,10 @@ class AgentState(TypedDict):
 class Agent:
     """基于 LangGraph 的 Agent 推理引擎。"""
 
-    _SINGLE_THREAD_ID = "default"
-
     def __init__(self, llm_client, tools: List):
         # 先把工具能力绑定给大模型，便于后续自动触发 tool_calls。
         self.llm = llm_client.bind_tools(tools) if tools else llm_client
         self.tools = tools
-        # MemorySaver 用于按 thread_id 存储短期上下文状态。
-        self.memory = MemorySaver()
         # 编译图后得到可执行对象，后续 think 中直接调用。
         self.graph = self._build_graph()
 
@@ -75,19 +71,25 @@ class Agent:
             workflow.add_node("tools", ToolNode(self.tools))
             workflow.add_edge("tools", "reason")
 
-        return workflow.compile(checkpointer=self.memory)
+        return workflow.compile()
 
     def think(
         self,
-        context_messages: List[BaseMessage],
+        old_messages: list[ChannelMessage],
+        new_messages: list[ChannelMessage],
         trace_id: str | None = None,
     ) -> str:
         """
         执行一次完整推理流程并返回最终文本。
 
         参数：
-        - context_messages: 由 hub 组装好的上下文消息列表
+        - old_messages: 已处理过的历史消息
+        - new_messages: 本次新增消息（只包含增量）
         """
+        context_messages = build_context_messages(
+            old_messages=old_messages,
+            new_messages=new_messages,
+        )
         effective_trace_id = trace_id or "agent#default"
         started_at = time.perf_counter()
         logger.info(
@@ -96,11 +98,8 @@ class Agent:
             len(context_messages),
         )
 
-        config: RunnableConfig = {"configurable": {"thread_id": self._SINGLE_THREAD_ID}}
         try:
-            events = self.graph.stream(
-                {"messages": context_messages}, config, stream_mode="values"
-            )
+            events = self.graph.stream({"messages": context_messages}, stream_mode="values")
             # stream 返回状态序列，最后一个状态即本轮推理完成态。
             step_count = 0
             final_state: dict[str, list[BaseMessage]] | None = None

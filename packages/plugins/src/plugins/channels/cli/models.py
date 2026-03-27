@@ -20,11 +20,3 @@ class CLIChannelMessage:
     sender: CLIChannelSender
     text: str
     created_at: str
-
-
-@dataclass(frozen=True)
-class CLIChannelUnreadStatus:
-    """外部聊天服务返回的未读状态。"""
-
-    ai_unread: bool
-    user_unread: bool

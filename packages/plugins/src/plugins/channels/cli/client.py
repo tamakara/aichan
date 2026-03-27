@@ -7,9 +7,6 @@ from plugins.channels.cli.models import (
     CLIChannelMessage,
     CLIChannelReader,
     CLIChannelSender,
-    CLIChannelUnreadStatus,
-    DEFAULT_CLI_SERVER_BASE_URL,
-    DEFAULT_CLI_TIMEOUT_SECONDS,
 )
 
 
@@ -37,25 +34,6 @@ class CLIMessageServiceClient:
             raise CLIMessageServiceError(f"健康检查失败：{exc}") from exc
 
         return isinstance(raw, dict) and raw.get("ok") is True
-
-    def get_unread_status(self) -> CLIChannelUnreadStatus:
-        try:
-            raw = self._http.request_json(method="GET", path="/v1/status")
-        except HTTPClientError as exc:
-            raise CLIMessageServiceError(f"获取未读状态失败：{exc}") from exc
-
-        if not isinstance(raw, dict):
-            raise CLIMessageServiceError("获取未读状态失败：返回体不是对象")
-
-        ai_unread = raw.get("ai_unread")
-        user_unread = raw.get("user_unread")
-        if not isinstance(ai_unread, bool) or not isinstance(user_unread, bool):
-            raise CLIMessageServiceError("获取未读状态失败：字段类型非法")
-
-        return CLIChannelUnreadStatus(
-            ai_unread=ai_unread,
-            user_unread=user_unread,
-        )
 
     def list_messages(
         self,

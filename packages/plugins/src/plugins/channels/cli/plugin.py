@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Literal
+from typing import Literal
 
 from core.entities import ChannelMessage
 from core.logger import logger
@@ -36,28 +36,6 @@ class CLIChannelPlugin(ChannelPlugin):
             server_base_url=server_base_url,
             timeout_seconds=timeout_seconds,
         )
-
-    def has_unread_for_ai(self) -> bool:
-        """
-        查询外部服务中 AI 侧是否存在未读消息。
-
-        注意：此接口不改变未读状态。
-        """
-        status = self._client.get_unread_status()
-        return status.ai_unread
-
-    def emit_signal_if_ai_unread(self, emit_signal: Callable[[str], None]) -> bool:
-        """
-        若 AI 侧存在未读消息，则通过回调触发通道信号。
-
-        返回值：
-        - True: 本次触发了信号
-        - False: 无未读消息，未触发
-        """
-        if not self.has_unread_for_ai():
-            return False
-        emit_signal(self.name)
-        return True
 
     def list_messages(self, since_id: int = 0) -> list[ChannelMessage]:
         started_at = time.perf_counter()
