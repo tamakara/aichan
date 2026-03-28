@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from typing import Literal
@@ -11,9 +12,9 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-# cli_server 固定本地通信地址。
-CLI_SERVER_HOST = "127.0.0.1"
-CLI_SERVER_PORT = 8765
+# cli_server 默认通信地址，可通过环境变量覆盖。
+CLI_SERVER_HOST = os.getenv("CLI_SERVER_HOST", "127.0.0.1")
+CLI_SERVER_PORT = int(os.getenv("CLI_SERVER_PORT", "8765"))
 CLI_SERVER_BASE_URL = f"http://{CLI_SERVER_HOST}:{CLI_SERVER_PORT}"
 CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS = 1
 CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS = 2
