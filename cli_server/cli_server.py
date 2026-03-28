@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -19,8 +18,6 @@ CLI_SERVER_BASE_URL = f"http://{CLI_SERVER_HOST}:{CLI_SERVER_PORT}"
 CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS = 1
 CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS = 2
 CLI_SERVER_SSE_WAIT_TIMEOUT_SECONDS = 1.0
-CLI_SERVER_STOP_JOIN_TIMEOUT_SECONDS = 1.0
-CLI_SERVER_FORCE_EXIT_JOIN_TIMEOUT_SECONDS = 0.5
 
 CLIChannelSender = Literal["ai", "user"]
 CLIChannelReader = Literal["ai", "user"]
@@ -43,13 +40,10 @@ class ExternalMessage(BaseModel):
 
 
 class InMemoryChatStore:
-    """
-    最简双对象消息系统：
-    - 对象：ai、user
-    """
+    """最简双对象消息系统：ai、user。"""
 
     def __init__(self) -> None:
-        self._messages: list[dict[str, object]] = []
+        self._messages: list[ExternalMessage] = []
         self._next_id = 1
         self._lock = threading.Lock()
         self._new_message_cond = threading.Condition(self._lock)
@@ -60,11 +54,7 @@ class InMemoryChatStore:
         after_id: int = 0,
     ) -> list[ExternalMessage]:
         with self._lock:
-            raw_messages = [
-                message for message in self._messages if int(message["id"]) > after_id
-            ]
-
-        return [ExternalMessage.model_validate(item) for item in raw_messages]
+            return list(self._collect_reader_messages(reader=reader, after_id=after_id))
 
     def wait_for_reader_messages(
         self,
@@ -72,17 +62,13 @@ class InMemoryChatStore:
         after_id: int,
         timeout_seconds: float,
     ) -> list[ExternalMessage]:
-        """
-        阻塞等待 `reader` 可见的新消息（id > after_id）。
-        - reader="ai" 仅接收 sender="user"
-        - reader="user" 仅接收 sender="ai"
-        """
+        """阻塞等待 `reader` 可见的新消息（id > after_id）。"""
         with self._new_message_cond:
-            raw_messages = self._collect_reader_messages(reader=reader, after_id=after_id)
-            if not raw_messages:
+            messages = self._collect_reader_messages(reader=reader, after_id=after_id)
+            if not messages:
                 self._new_message_cond.wait(timeout=timeout_seconds)
-                raw_messages = self._collect_reader_messages(reader=reader, after_id=after_id)
-        return [ExternalMessage.model_validate(item) for item in raw_messages]
+                messages = self._collect_reader_messages(reader=reader, after_id=after_id)
+            return list(messages)
 
     @staticmethod
     def _is_visible_to_reader(
@@ -95,13 +81,13 @@ class InMemoryChatStore:
         self,
         reader: CLIChannelReader,
         after_id: int,
-    ) -> list[dict[str, object]]:
+    ) -> list[ExternalMessage]:
         return [
             message
             for message in self._messages
-            if int(message["id"]) > after_id
+            if message.id > after_id
             and self._is_visible_to_reader(
-                sender=message["sender"],  # type: ignore[arg-type]
+                sender=message.sender,
                 reader=reader,
             )
         ]
@@ -116,29 +102,25 @@ class InMemoryChatStore:
             raise ValueError("text 不能为空")
 
         with self._lock:
-            raw_message: dict[str, object] = {
-                "id": self._next_id,
-                "sender": sender,
-                "text": clean_text,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self._messages.append(raw_message)
+            message = ExternalMessage(
+                id=self._next_id,
+                sender=sender,
+                text=clean_text,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            self._messages.append(message)
             self._next_id += 1
-
             self._new_message_cond.notify_all()
 
-        return ExternalMessage.model_validate(raw_message)
+        return message
 
 
 def build_cli_server_app() -> FastAPI:
     """
     构建外部聊天服务 FastAPI 应用。
 
-    API 约定：
-    - GET  /health
-    - GET  /v1/messages?reader=ai|user&after_id=...
-    - GET  /v1/events?reader=ai|user&after_id=...
-    - POST /v1/messages  body: {sender, text}
+    直接运行方式：
+    `uv run python .\\cli_server\\cli_server.py`
     """
     app = FastAPI(title="CLI External Chat Server", version="1.0.0")
     store = InMemoryChatStore()
@@ -227,53 +209,22 @@ def build_cli_server_app() -> FastAPI:
     return app
 
 
-class CLIServerRuntime:
-    """封装 uvicorn 服务，供 main.py 以子线程方式启动。"""
+def run_cli_server(host: str = CLI_SERVER_HOST, port: int = CLI_SERVER_PORT) -> None:
+    uvicorn.run(
+        build_cli_server_app(),
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True,
+        timeout_keep_alive=CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS,
+        timeout_graceful_shutdown=CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS,
+    )
 
-    def __init__(
-        self,
-        host: str = CLI_SERVER_HOST,
-        port: int = CLI_SERVER_PORT,
-    ) -> None:
-        self.host = host
-        self.port = port
-        self.app = build_cli_server_app()
-        self._server = uvicorn.Server(
-            uvicorn.Config(
-                app=self.app,
-                host=self.host,
-                port=self.port,
-                log_level="warning",
-                access_log=False,
-                timeout_keep_alive=CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS,
-                timeout_graceful_shutdown=CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS,
-            )
-        )
-        self._thread: threading.Thread | None = None
 
-    def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
+def main() -> None:
+    """直接运行文件即可启动服务。"""
+    run_cli_server(host=CLI_SERVER_HOST, port=CLI_SERVER_PORT)
 
-        self._thread = threading.Thread(
-            target=self._server.run,
-            name="cli-server",
-            daemon=True,
-        )
-        self._thread.start()
 
-        startup_deadline = time.time() + 5.0
-        while not self._server.started and time.time() < startup_deadline:
-            time.sleep(0.05)
-
-        if not self._server.started:
-            raise RuntimeError("cli_server 启动失败")
-
-    def stop(self, wait: bool = True) -> None:
-        self._server.should_exit = True
-        if wait and self._thread and self._thread.is_alive():
-            self._thread.join(timeout=CLI_SERVER_STOP_JOIN_TIMEOUT_SECONDS)
-            if self._thread.is_alive():
-                # 如果优雅停机仍未完成，触发强制退出，避免长时间阻塞主进程退出。
-                self._server.force_exit = True
-                self._thread.join(timeout=CLI_SERVER_FORCE_EXIT_JOIN_TIMEOUT_SECONDS)
+if __name__ == "__main__":
+    main()
