@@ -4,6 +4,7 @@ import argparse
 import html
 import json
 import threading
+import time
 from dataclasses import dataclass
 from urllib import error, parse, request
 
@@ -271,6 +272,12 @@ class CLIUserInterface:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="独立 CLI 客户端")
     parser.add_argument(
+        "--connect-retry-delay",
+        type=float,
+        default=3.0,
+        help="服务不可达时重试连接间隔（秒）",
+    )
+    parser.add_argument(
         "--sse-reconnect-delay",
         type=float,
         default=1.0,
@@ -289,11 +296,53 @@ def parse_args() -> argparse.Namespace:
         help="HTTP 请求超时时间（秒）",
     )
     args = parser.parse_args()
+    if args.connect_retry_delay <= 0:
+        parser.error("--connect-retry-delay 必须大于 0")
     if args.sse_reconnect_delay <= 0:
         parser.error("--sse-reconnect-delay 必须大于 0")
     if args.sse_timeout <= 0:
         parser.error("--sse-timeout 必须大于 0")
     return args
+
+
+def wait_for_service_online(
+    client: ExternalServiceClient,
+    ui: CLIUserInterface,
+    retry_delay_seconds: float,
+) -> None:
+    """阻塞等待外部服务可用，失败后按固定间隔持续重试。"""
+    while True:
+        try:
+            if client.health():
+                ui.print_system_message("外部聊天服务连接成功。")
+                return
+            ui.print_error_message("健康检查返回异常状态。")
+        except ExternalServiceError as exc:
+            ui.print_error_message(f"无法连接外部聊天服务：{exc}")
+
+        ui.print_system_message(
+            f"{retry_delay_seconds:g} 秒后重试连接（Ctrl+C 取消）。"
+        )
+        time.sleep(retry_delay_seconds)
+
+
+def load_initial_messages_with_retry(
+    client: ExternalServiceClient,
+    state: LocalMessageState,
+    ui: CLIUserInterface,
+    retry_delay_seconds: float,
+) -> list[ExternalMessage]:
+    """启动阶段拉取历史消息，失败后按固定间隔持续重试。"""
+    while True:
+        try:
+            initial_messages = client.list_messages(reader="user", after_id=state.last_seen_id)
+            return state.merge_new_messages(initial_messages)
+        except ExternalServiceError as exc:
+            ui.print_error_message(f"启动同步失败：{exc}")
+            ui.print_system_message(
+                f"{retry_delay_seconds:g} 秒后重试拉取历史消息（Ctrl+C 取消）。"
+            )
+            time.sleep(retry_delay_seconds)
 
 
 def start_sse_sync_worker(
@@ -381,7 +430,9 @@ def start_sse_sync_worker(
                     if handled_id is not None:
                         last_id = max(last_id, handled_id)
             except (ExternalServiceError, error.URLError) as exc:
-                ui.print_error_message(f"实时同步失败：{exc}")
+                ui.print_error_message(
+                    f"实时同步失败：{exc}，{reconnect_delay_seconds:g} 秒后重连"
+                )
             finally:
                 stop_event.wait(reconnect_delay_seconds)
 
@@ -410,10 +461,13 @@ def run_cli_client() -> None:
     )
 
     try:
-        if not client.health():
-            raise ExternalServiceError("健康检查返回异常状态")
-    except ExternalServiceError as exc:
-        ui.print_error_message(f"无法连接外部聊天服务：{exc}")
+        wait_for_service_online(
+            client=client,
+            ui=ui,
+            retry_delay_seconds=args.connect_retry_delay,
+        )
+    except KeyboardInterrupt:
+        ui.print_system_message("已取消连接。")
         return
 
     ui.print_intro(server_url=server_url)
@@ -423,11 +477,15 @@ def run_cli_client() -> None:
 
     try:
         try:
-            initial_messages = client.list_messages(reader="user", after_id=state.last_seen_id)
-            initial_messages = state.merge_new_messages(initial_messages)
-        except ExternalServiceError as exc:
-            ui.print_error_message(f"启动同步失败：{exc}")
-            initial_messages = []
+            initial_messages = load_initial_messages_with_retry(
+                client=client,
+                state=state,
+                ui=ui,
+                retry_delay_seconds=args.connect_retry_delay,
+            )
+        except KeyboardInterrupt:
+            ui.print_system_message("已取消同步，CLI 客户端退出。")
+            return
         for message in initial_messages:
             ui.print_synced_message(message)
 

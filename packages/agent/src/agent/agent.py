@@ -1,3 +1,4 @@
+import json
 import time
 from typing import Annotated, List, TypedDict
 
@@ -7,7 +8,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from core.entities import ChannelMessage
-from core.logger import logger
+from core.logger import logger, render_panel
 from agent.prompt_builder import build_context_messages
 
 
@@ -16,6 +17,42 @@ class AgentState(TypedDict):
 
     # add_messages 负责把节点返回的新消息自动追加到历史消息列表。
     messages: Annotated[list[BaseMessage], add_messages]
+
+
+def _serialize_message_content(content: object) -> str:
+    """将消息内容稳定序列化为日志文本。"""
+    if isinstance(content, str):
+        return content
+
+    try:
+        return json.dumps(content, ensure_ascii=False, indent=2)
+    except TypeError:
+        return repr(content)
+
+
+def _render_full_prompt(messages: list[BaseMessage]) -> str:
+    """渲染完整的 LLM 输入提示词（不截断）。"""
+    sections: list[str] = []
+    for index, message in enumerate(messages, start=1):
+        header = f"[{index}] role={message.type}"
+        if message.id:
+            header = f"{header} id={message.id}"
+
+        section = f"{header}\n{_serialize_message_content(message.content)}"
+        if isinstance(message, AIMessage) and message.tool_calls:
+            tool_calls = json.dumps(message.tool_calls, ensure_ascii=False, indent=2)
+            section = f"{section}\n\n[tool_calls]\n{tool_calls}"
+        sections.append(section)
+
+    return "\n\n".join(sections)
+
+
+def _extract_tool_names(message: AIMessage) -> list[str]:
+    """提取一条 AI 消息中的工具调用名称。"""
+    names: list[str] = []
+    for tool_call in message.tool_calls:
+        names.append(tool_call.get("name", "<unknown_tool>"))
+    return names
 
 
 class Agent:
@@ -36,14 +73,15 @@ class Agent:
             # 该节点负责与 LLM 通信，返回一条 AI 消息。
             try:
                 logger.info(
-                    "🧠 [Agent] reason 节点执行，历史消息数={}",
-                    len(state["messages"]),
+                    "🧾 [LLM] 请求提示词:\n{}",
+                    render_panel(_render_full_prompt(state["messages"])),
                 )
                 response = self.llm.invoke(state["messages"])
-                logger.info(
-                    "✅ [Agent] reason 节点返回，消息类型={}",
-                    response.__class__.__name__,
-                )
+                if isinstance(response, AIMessage) and response.tool_calls:
+                    logger.info(
+                        "🛠 [LLM] 调用工具: {}",
+                        ", ".join(_extract_tool_names(response)),
+                    )
                 return {"messages": [response]}
             except Exception as exc:
                 # 发生异常时仅记录日志并向上抛出，避免向用户发送失败提示文案。
@@ -92,31 +130,12 @@ class Agent:
         )
         effective_trace_id = trace_id or "agent#default"
         started_at = time.perf_counter()
-        logger.info(
-            "🚀 [Agent] trace_id={} 开始推理流程，输入消息数={}",
-            effective_trace_id,
-            len(context_messages),
-        )
 
         try:
             events = self.graph.stream({"messages": context_messages}, stream_mode="values")
-            # stream 返回状态序列，最后一个状态即本轮推理完成态。
-            step_count = 0
             final_state: dict[str, list[BaseMessage]] | None = None
             for state in events:
-                step_count += 1
                 final_state = state
-                last_message = state["messages"][-1]
-                has_tool_calls = isinstance(last_message, AIMessage) and bool(
-                    last_message.tool_calls
-                )
-                logger.info(
-                    "🔄 [Agent] trace_id={} 图状态推进 step={}，last_message_type={}，tool_calls={}",
-                    effective_trace_id,
-                    step_count,
-                    last_message.__class__.__name__,
-                    has_tool_calls,
-                )
 
             if final_state is None:
                 raise RuntimeError("Agent 推理流程未产出任何状态")
@@ -124,9 +143,8 @@ class Agent:
             reply_content = final_state["messages"][-1].content
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             logger.info(
-                "✅ [Agent] trace_id={} 推理完成，步骤数={}，输出长度={}字符，耗时={}ms",
+                "✅ [Agent] trace_id={} 推理完成，输出长度={}字符，耗时={}ms",
                 effective_trace_id,
-                step_count,
                 len(reply_content),
                 elapsed_ms,
             )

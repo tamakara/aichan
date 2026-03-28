@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import queue
 import threading
-import time
 
 from core.entities import AgentSignal
 from hub.signal_processor import SignalProcessor
@@ -45,22 +44,9 @@ class SignalHub:
             try:
                 signal_seq += 1
                 signal_id = f"{signal.channel}#{signal_seq}"
-                started_at = time.perf_counter()
-                logger.info(
-                    "🧠 [SignalHub -> SignalProcessor] signal_id={} 将 {} 的信号交由处理器处理...",
-                    signal_id,
-                    signal.channel,
-                )
-                handled_count = self._signal_processor.process_signal(
+                self._signal_processor.process_signal(
                     signal=signal,
                     signal_id=signal_id,
-                )
-                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                logger.info(
-                    "✅ [SignalHub <- SignalProcessor] signal_id={} 处理完成，user消息处理数={}，耗时={}ms",
-                    signal_id,
-                    handled_count,
-                    elapsed_ms,
                 )
             except Exception as e:
                 logger.error(

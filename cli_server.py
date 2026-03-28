@@ -238,7 +238,7 @@ class CLIServerRuntime:
                 app=self.app,
                 host=self.host,
                 port=self.port,
-                log_level="info",
+                log_level="warning",
                 access_log=False,
             )
         )
