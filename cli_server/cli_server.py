@@ -75,7 +75,10 @@ class InMemoryChatStore:
         sender: CLIChannelSender,
         reader: CLIChannelReader,
     ) -> bool:
-        return sender != reader
+        # 当前策略：任一 reader 均可查看 ai/user 双方完整消息。
+        # 保留 reader 参数用于兼容既有 API 与后续扩展。
+        _ = sender, reader
+        return True
 
     def _collect_reader_messages(
         self,
@@ -144,7 +147,7 @@ def build_cli_server_app() -> FastAPI:
     ) -> StreamingResponse:
         """
         SSE 事件流：
-        - 仅推送对 `reader` 可见的新消息（按 message id 递增）
+        - 推送 `after_id` 之后的新消息（按 message id 递增）
         - 通过 after_id 支持断线续传
         """
 

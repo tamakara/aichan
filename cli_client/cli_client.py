@@ -195,11 +195,16 @@ class CLIUserInterface:
                 "error": "ansired bold",
             }
         )
-        self._session = PromptSession(
+        self._server_session = PromptSession(
+            complete_while_typing=False,
+            enable_history_search=True
+        )
+        self._chat_session = PromptSession(
             history=InMemoryHistory(),
             auto_suggest=AutoSuggestFromHistory(),
             complete_while_typing=False,
-            enable_history_search=True
+            enable_history_search=True,
+            erase_when_done=True,
         )
 
     def print_intro(self, server_url: str) -> None:
@@ -225,7 +230,7 @@ class CLIUserInterface:
             style=self._style,
         )
         while True:
-            raw = self._session.prompt(
+            raw = self._server_session.prompt(
                 HTML("<prompt>服务地址</prompt> > "),
                 default=default_url,
                 style=self._style,
@@ -236,7 +241,7 @@ class CLIUserInterface:
                 self.print_error_message(f"地址格式不合法：{exc}，请重新输入。")
 
     def prompt_user_text(self) -> str:
-        return self._session.prompt(
+        return self._chat_session.prompt(
             HTML("<prompt>user</prompt> > "),
             style=self._style,
         )
