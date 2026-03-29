@@ -5,8 +5,7 @@ from typing import cast
 from core.http_client import HTTPClient, HTTPClientError
 from plugins.channels.cli.models import (
     CLIChannelMessage,
-    CLIChannelReader,
-    CLIChannelSender,
+    CLIChannelIdentity,
 )
 
 
@@ -37,7 +36,7 @@ class CLIMessageServiceClient:
 
     def list_messages(
         self,
-        reader: CLIChannelReader,
+        reader: CLIChannelIdentity,
         after_id: int = 0,
     ) -> list[CLIChannelMessage]:
         try:
@@ -56,7 +55,7 @@ class CLIMessageServiceClient:
 
     def send_message(
         self,
-        sender: CLIChannelSender,
+        sender: CLIChannelIdentity,
         text: str,
     ) -> CLIChannelMessage:
         try:
@@ -88,7 +87,7 @@ class CLIMessageServiceClient:
         if not isinstance(created_at, str) or not created_at:
             raise CLIMessageServiceError("消息解析失败：created_at 非法")
 
-        normalized_sender = cast(CLIChannelSender, sender)
+        normalized_sender = cast(CLIChannelIdentity, sender)
         return CLIChannelMessage(
             message_id=raw_id,
             sender=normalized_sender,

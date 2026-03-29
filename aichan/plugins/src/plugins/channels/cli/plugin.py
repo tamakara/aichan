@@ -9,8 +9,8 @@ from core.logger import logger
 from plugins.base import ChannelPlugin
 from plugins.channels.cli.client import CLIMessageServiceClient, CLIMessageServiceError
 from plugins.channels.cli.models import (
+    CLIChannelIdentity,
     CLIChannelMessage,
-    CLIChannelSender,
     DEFAULT_CLI_CHANNEL_NAME,
     DEFAULT_CLI_TIMEOUT_SECONDS,
 )
@@ -103,12 +103,12 @@ class CLIChannelPlugin(ChannelPlugin):
             content=message.text,
         )
 
-    def _to_internal_role(self, sender: CLIChannelSender) -> Literal["user", "assistant"]:
+    def _to_internal_role(self, sender: CLIChannelIdentity) -> Literal["user", "assistant"]:
         if sender == "user":
             return "user"
         return "assistant"
 
-    def _to_external_sender(self, role: str) -> CLIChannelSender:
+    def _to_external_sender(self, role: str) -> CLIChannelIdentity:
         if role == "user":
             return "user"
         if role in {"assistant", "system"}:

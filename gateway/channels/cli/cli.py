@@ -15,19 +15,17 @@ from pydantic import BaseModel, Field
 # cli_server 默认通信地址，可通过环境变量覆盖。
 CLI_SERVER_HOST = os.getenv("CLI_SERVER_HOST", "127.0.0.1")
 CLI_SERVER_PORT = int(os.getenv("CLI_SERVER_PORT", "8765"))
-CLI_SERVER_BASE_URL = f"http://{CLI_SERVER_HOST}:{CLI_SERVER_PORT}"
 CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS = 1
 CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS = 2
 CLI_SERVER_SSE_WAIT_TIMEOUT_SECONDS = 1.0
 
-CLIChannelSender = Literal["ai", "user"]
-CLIChannelReader = Literal["ai", "user"]
+CLIChannelIdentity = Literal["ai", "user"]
 
 
 class ExternalSendMessageRequest(BaseModel):
     """外部聊天服务的消息写入请求体。"""
 
-    sender: CLIChannelSender
+    sender: CLIChannelIdentity
     text: str = Field(..., min_length=1)
 
 
@@ -35,7 +33,7 @@ class ExternalMessage(BaseModel):
     """外部聊天服务返回的消息结构。"""
 
     id: int = Field(..., ge=1)
-    sender: CLIChannelSender
+    sender: CLIChannelIdentity
     text: str
     created_at: str
 
@@ -51,7 +49,7 @@ class InMemoryChatStore:
 
     def list_messages(
         self,
-        reader: CLIChannelReader,
+        reader: CLIChannelIdentity,
         after_id: int = 0,
     ) -> list[ExternalMessage]:
         with self._lock:
@@ -59,7 +57,7 @@ class InMemoryChatStore:
 
     def wait_for_reader_messages(
         self,
-        reader: CLIChannelReader,
+        reader: CLIChannelIdentity,
         after_id: int,
         timeout_seconds: float,
     ) -> list[ExternalMessage]:
@@ -73,8 +71,8 @@ class InMemoryChatStore:
 
     @staticmethod
     def _is_visible_to_reader(
-        sender: CLIChannelSender,
-        reader: CLIChannelReader,
+        sender: CLIChannelIdentity,
+        reader: CLIChannelIdentity,
     ) -> bool:
         # 当前策略：任一 reader 均可查看 ai/user 双方完整消息。
         # 保留 reader 参数用于兼容既有 API 与后续扩展。
@@ -83,7 +81,7 @@ class InMemoryChatStore:
 
     def _collect_reader_messages(
         self,
-        reader: CLIChannelReader,
+        reader: CLIChannelIdentity,
         after_id: int,
     ) -> list[ExternalMessage]:
         return [
@@ -98,7 +96,7 @@ class InMemoryChatStore:
 
     def send_message(
         self,
-        sender: CLIChannelSender,
+        sender: CLIChannelIdentity,
         text: str,
     ) -> ExternalMessage:
         clean_text = text.strip()
@@ -135,7 +133,7 @@ def build_cli_server_app() -> FastAPI:
 
     @app.get("/v1/messages", response_model=list[ExternalMessage])
     def list_messages(
-        reader: CLIChannelReader = Query(...),
+        reader: CLIChannelIdentity = Query(...),
         after_id: int = Query(default=0, ge=0),
     ) -> list[ExternalMessage]:
         return store.list_messages(reader=reader, after_id=after_id)
@@ -143,7 +141,7 @@ def build_cli_server_app() -> FastAPI:
     @app.get("/v1/events")
     async def stream_events(
         request: Request,
-        reader: CLIChannelReader = Query(...),
+        reader: CLIChannelIdentity = Query(...),
         after_id: int = Query(default=0, ge=0),
     ) -> StreamingResponse:
         """

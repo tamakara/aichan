@@ -2,7 +2,7 @@ services:
   cli_channel:
     build:
       context: .
-      dockerfile: cli_channel/Dockerfile
+      dockerfile: gateway/cli/Dockerfile
     environment:
       CLI_SERVER_HOST: ${CLI_SERVER_HOST}
       CLI_SERVER_PORT: ${CLI_SERVER_PORT}
