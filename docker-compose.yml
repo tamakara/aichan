@@ -1,8 +1,8 @@
 services:
   cli_channel:
     build:
-      context: .
-      dockerfile: gateway/channels/cli/Dockerfile
+      context: ./gateway/channels/cli
+      dockerfile: Dockerfile
     environment:
       CLI_SERVER_HOST: ${CLI_SERVER_HOST}
       CLI_SERVER_PORT: ${CLI_SERVER_PORT}
@@ -14,8 +14,8 @@ services:
 
   aichan:
     build:
-      context: .
-      dockerfile: aichan/Dockerfile
+      context: ./aichan
+      dockerfile: Dockerfile
     environment:
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_BASE_URL: ${LLM_BASE_URL}

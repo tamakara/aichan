@@ -7,7 +7,7 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY aichan/ /app/
+COPY . /app/
 
 RUN uv sync --frozen --no-dev
 
