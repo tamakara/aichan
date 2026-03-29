@@ -9,8 +9,8 @@ COPY ./requirements.txt /app/requirements.txt
 
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY ./cli_gateway.py /app/cli_gateway.py
+COPY . /app/
 
-EXPOSE 8765
+EXPOSE 9000
 
 CMD ["python", "cli_gateway.py"]
