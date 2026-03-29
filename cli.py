@@ -21,7 +21,7 @@ from prompt_toolkit.styles import Style
 # ==========================================
 # ⚙️ 全局默认配置常量
 # ==========================================
-DEFAULT_SERVER_URL = "http://localhost:8765"
+DEFAULT_SERVER_URL = "http://localhost:9000"
 
 # 网络请求超时时间（秒）
 DEFAULT_HTTP_TIMEOUT = 5.0
