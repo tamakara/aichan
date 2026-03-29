@@ -159,7 +159,7 @@ class TerminalUI:
         line = "=" * 72
         print_formatted_text(line, style=self._style)
         print_formatted_text(
-            HTML("<system>独立 CLI 客户端（Pydantic + httpx）</system>"),
+            HTML("<system>AIChan CLI 客户端</system>"),
             style=self._style,
         )
         print_formatted_text(f"服务地址: {server_url}", style=self._style)
@@ -296,7 +296,7 @@ def start_sse_worker(
 # 🚀 应用程序入口
 # ==========================================
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="独立 CLI 客户端")
+    parser = argparse.ArgumentParser(description="AIChan CLI 客户端")
     parser.add_argument(
         "--connect-retry-delay", type=float, default=DEFAULT_CONNECT_RETRY_DELAY
     )
