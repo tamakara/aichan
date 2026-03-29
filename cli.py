@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import html
-import json
 import threading
 import time
-from dataclasses import dataclass
-from urllib import error, parse, request
+from urllib.parse import urlencode
+
+import httpx
+from httpx_sse import connect_sse
+from pydantic import BaseModel
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -16,176 +18,123 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.shortcuts import print_formatted_text
 from prompt_toolkit.styles import Style
 
-DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
+# ==========================================
+# ⚙️ 全局默认配置常量
+# ==========================================
+DEFAULT_SERVER_URL = "http://localhost:8765"
+
+# 网络请求超时时间（秒）
+DEFAULT_HTTP_TIMEOUT = 5.0
+# SSE 长连接保持超时时间（秒）
+DEFAULT_SSE_TIMEOUT = 30.0
+# 服务不可用时，重试连接的等待间隔（秒）
+DEFAULT_CONNECT_RETRY_DELAY = 3.0
+# SSE 意外断线后，重新发起连接的等待间隔（秒）
+DEFAULT_SSE_RECONNECT_DELAY = 1.0
 
 
-class ExternalServiceError(RuntimeError):
-    """外部聊天服务通信异常。"""
+# ==========================================
+# 📦 数据模型
+# ==========================================
+class ChatMessage(BaseModel):
+    """
+    统一的聊天消息数据结构。
+    使用 Pydantic 提供严格的类型校验和 JSON 序列化能力。
+    """
 
-
-def normalize_server_url(raw_url: str) -> str:
-    """规范化并校验服务地址。"""
-    candidate = raw_url.strip().rstrip("/")
-    if not candidate:
-        raise ValueError("服务地址不能为空")
-
-    # 允许输入 127.0.0.1:8765 / localhost:8765，自动补全协议。
-    if "://" not in candidate:
-        candidate = f"http://{candidate}"
-
-    parsed = parse.urlparse(candidate)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("仅支持 http 或 https 协议")
-    if not parsed.netloc:
-        raise ValueError("缺少主机名或端口")
-    return candidate
-
-
-@dataclass(frozen=True)
-class ExternalMessage:
-    """外部聊天服务消息结构。"""
-
-    message_id: int
+    id: int
     sender: str
     text: str
     created_at: str
 
 
-class LocalMessageState:
-    """客户端本地消息状态。"""
+# ==========================================
+# 🧠 本地状态管理
+# ==========================================
+class MessageState:
+    """
+    客户端本地的消息状态管理器。
+    负责消息去重、排序，并记录当前已同步的最后一条消息 ID。
+    由于会被主线程（发送消息）和后台线程（接收 SSE）同时访问，加入了线程锁保障安全。
+    """
 
     def __init__(self) -> None:
-        self._messages: list[ExternalMessage] = []
+        self._messages: list[ChatMessage] = []
         self._known_ids: set[int] = set()
         self._last_seen_id = 0
         self._lock = threading.Lock()
 
     @property
     def last_seen_id(self) -> int:
+        """获取当前已知的最新消息 ID，用于断点续传"""
         with self._lock:
             return self._last_seen_id
 
-    def merge_new_messages(
-        self,
-        incoming: list[ExternalMessage],
-    ) -> list[ExternalMessage]:
-        new_messages: list[ExternalMessage] = []
+    def merge_new_messages(self, incoming: list[ChatMessage]) -> list[ChatMessage]:
+        """
+        合并新到达的消息，自动过滤重复项，并更新 last_seen_id。
+        返回真正属于“新增”的消息列表，供 UI 层渲染。
+        """
+        new_messages: list[ChatMessage] = []
         with self._lock:
             for message in incoming:
-                if message.message_id in self._known_ids:
+                if message.id in self._known_ids:
                     continue
                 self._messages.append(message)
-                self._known_ids.add(message.message_id)
-                self._last_seen_id = max(self._last_seen_id, message.message_id)
+                self._known_ids.add(message.id)
+                self._last_seen_id = max(self._last_seen_id, message.id)
                 new_messages.append(message)
         return new_messages
 
 
-class ExternalServiceClient:
-    """独立客户端 HTTP 封装。"""
+# ==========================================
+# 🌐 网关通信层
+# ==========================================
+class GatewayClient:
+    """
+    负责与 CLI Gateway 进行 HTTP 通信的封装客户端。
+    统一处理 URL 拼接、超时和状态码校验。
+    """
 
-    def __init__(self, server_url: str, timeout_seconds: float = 5.0) -> None:
-        self._server_url = normalize_server_url(server_url)
-        self._timeout_seconds = timeout_seconds
+    def __init__(
+        self, server_url: str, timeout_seconds: float = DEFAULT_HTTP_TIMEOUT
+    ) -> None:
+        # 去除 URL 尾部的斜杠，防止路径拼接时出现双斜杠
+        self.server_url = server_url.rstrip("/")
+        # 复用 httpx Client 提升连接池性能
+        self.client = httpx.Client(base_url=self.server_url, timeout=timeout_seconds)
 
-    def health(self) -> bool:
-        raw = self._request_json(method="GET", path="/health")
-        return isinstance(raw, dict) and raw.get("ok") is True
-
-    def list_messages(self, after_id: int = 0) -> list[ExternalMessage]:
-        raw = self._request_json(
-            method="GET",
-            path="/v1/messages",
-            query={"after_id": after_id},
-        )
-        if not isinstance(raw, list):
-            raise ExternalServiceError("拉取消息失败：返回体不是列表")
-
-        messages: list[ExternalMessage] = []
-        for item in raw:
-            messages.append(self.parse_external_message(item))
-        return messages
-
-    def send_message(self, sender: str, text: str) -> ExternalMessage:
-        raw = self._request_json(
-            method="POST",
-            path="/v1/messages",
-            payload={"sender": sender, "text": text},
-        )
-        if not isinstance(raw, dict):
-            raise ExternalServiceError("发送消息失败：返回体不是对象")
-
-        return self.parse_external_message(raw)
-
-    def parse_external_message(self, raw: object) -> ExternalMessage:
-        if not isinstance(raw, dict):
-            raise ExternalServiceError("消息解析失败：返回体不是对象")
-
-        raw_id = raw.get("id")
-        raw_sender = raw.get("sender")
-        raw_text = raw.get("text")
-        created_at = raw.get("created_at")
-        if not isinstance(raw_id, int):
-            raise ExternalServiceError("消息解析失败：id 非法")
-        if not isinstance(raw_sender, str):
-            raise ExternalServiceError("消息解析失败：sender 非法")
-        if not isinstance(raw_text, str):
-            raise ExternalServiceError("消息解析失败：text 非法")
-        if not isinstance(created_at, str):
-            raise ExternalServiceError("消息解析失败：created_at 非法")
-
-        return ExternalMessage(
-            message_id=raw_id,
-            sender=raw_sender,
-            text=raw_text,
-            created_at=created_at,
-        )
-
-    def build_events_url(self, after_id: int = 0) -> str:
-        query = parse.urlencode({"after_id": after_id})
-        return f"{self._server_url}/v1/events?{query}"
-
-    def _request_json(
-        self,
-        method: str,
-        path: str,
-        query: dict[str, object] | None = None,
-        payload: object | None = None,
-    ) -> object:
-        url = f"{self._server_url}{path}"
-        if query:
-            url = f"{url}?{parse.urlencode(query)}"
-
-        body = None
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if payload is not None:
-            body = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-
-        req = request.Request(url=url, data=body, headers=headers, method=method)
+    def check_health(self) -> bool:
+        """检查网关服务是否可用"""
         try:
-            with request.urlopen(req, timeout=self._timeout_seconds) as resp:
-                raw_text = resp.read().decode("utf-8")
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            raise ExternalServiceError(
-                f"HTTP 请求失败（{exc.code}）：{detail or exc.reason}"
-            ) from exc
-        except error.URLError as exc:
-            raise ExternalServiceError(f"无法连接服务：{exc.reason}") from exc
+            return self.client.get("/health").json().get("ok") is True
+        except Exception:
+            return False
 
-        if not raw_text:
-            return {}
-        try:
-            return json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            raise ExternalServiceError("服务返回非 JSON 内容") from exc
+    def fetch_messages(self, after_id: int = 0) -> list[ChatMessage]:
+        """全量拉取历史消息（通常在客户端刚启动时调用）"""
+        resp = self.client.get("/v1/messages", params={"after_id": after_id})
+        resp.raise_for_status()
+        return [ChatMessage.model_validate(item) for item in resp.json()]
+
+    def send_message(self, sender: str, text: str) -> ChatMessage:
+        """向网关发送一条新消息"""
+        resp = self.client.post("/v1/messages", json={"sender": sender, "text": text})
+        resp.raise_for_status()
+        return ChatMessage.model_validate(resp.json())
 
 
-class CLIUserInterface:
-    """基于 prompt_toolkit 的终端交互层。"""
+# ==========================================
+# 🖥️ 终端 UI 层
+# ==========================================
+class TerminalUI:
+    """
+    基于 prompt_toolkit 打造的富文本终端界面。
+    处理彩色输出、输入历史记录以及异步日志打印。
+    """
 
     def __init__(self) -> None:
+        # 定义终端配色方案
         self._style = Style.from_dict(
             {
                 "prompt": "ansicyan bold",
@@ -195,28 +144,25 @@ class CLIUserInterface:
                 "error": "ansired bold",
             }
         )
-        self._server_session = PromptSession(
-            complete_while_typing=False,
-            enable_history_search=True,
-        )
+        # 服务器地址输入的会话（不需要历史记录）
+        self._server_session = PromptSession(complete_while_typing=False)
+        # 聊天输入的会话（支持上下键翻找历史记录）
         self._chat_session = PromptSession(
             history=InMemoryHistory(),
             auto_suggest=AutoSuggestFromHistory(),
             complete_while_typing=False,
-            enable_history_search=True,
-            erase_when_done=True,
+            erase_when_done=True,  # 输入完成后自动清空输入框，保持界面整洁
         )
 
     def print_intro(self, server_url: str) -> None:
+        """打印欢迎信息和操作指南"""
         line = "=" * 72
         print_formatted_text(line, style=self._style)
         print_formatted_text(
-            HTML("<system>独立 CLI 客户端（prompt_toolkit）</system>"),
+            HTML("<system>独立 CLI 客户端（Pydantic + httpx）</system>"),
             style=self._style,
         )
-        print_formatted_text("通信对象: user <-> ai", style=self._style)
         print_formatted_text(f"服务地址: {server_url}", style=self._style)
-        print_formatted_text("消息同步: SSE (/v1/events)", style=self._style)
         print_formatted_text(
             "提示    : 输入消息后回车发送，/exit 退出，按 Ctrl+C 退出",
             style=self._style,
@@ -224,319 +170,215 @@ class CLIUserInterface:
         print_formatted_text(line, style=self._style)
 
     def prompt_server_url(self, default_url: str) -> str:
-        print_formatted_text("请输入要连接的 cli_gateway 地址。", style=self._style)
-        print_formatted_text(
-            f"直接回车使用默认值：{default_url}",
-            style=self._style,
-        )
+        """引导用户输入网关地址，并进行基础校验"""
         while True:
             raw = self._server_session.prompt(
                 HTML("<prompt>服务地址</prompt> > "),
                 default=default_url,
                 style=self._style,
             ).strip()
-            try:
-                return normalize_server_url(raw or default_url)
-            except ValueError as exc:
-                self.print_error_message(f"地址格式不合法：{exc}，请重新输入。")
+            url = raw or default_url
+            if not url.startswith(("http://", "https://")):
+                self.print_error(
+                    "错误：必须输入完整的 URL 协议（http:// 或 https://）。"
+                )
+                continue
+            return url
 
     def prompt_user_text(self) -> str:
+        """等待用户输入聊天文本"""
         return self._chat_session.prompt(
-            HTML("<prompt>user</prompt> > "),
-            style=self._style,
+            HTML("<prompt>user</prompt> > "), style=self._style
         )
 
-    def print_synced_message(self, message: ExternalMessage) -> None:
+    def print_chat_message(self, message: ChatMessage) -> None:
+        """格式化打印收发双方的聊天消息，支持多行文本缩进"""
         speaker = "user" if message.sender == "user" else "ai"
-
         content = message.text.strip() or "（空消息）"
         lines = content.splitlines()
-        first_line = html.escape(lines[0])
+
+        # 打印首行并带上发送者标签
         print_formatted_text(
-            HTML(f"<{speaker}>{speaker}</{speaker}> > {first_line}"),
+            HTML(f"<{speaker}>{speaker}</{speaker}> > {html.escape(lines[0])}"),
             style=self._style,
         )
+        # 如果有多行，后续行进行缩进对齐
         for line in lines[1:]:
             print_formatted_text(f"  {line}", style=self._style)
 
-    def print_system_message(self, text: str) -> None:
-        content = html.escape(text)
+    def print_system(self, text: str) -> None:
+        """打印系统提示信息"""
         print_formatted_text(
-            HTML(f"<system>system</system> > {content}"),
-            style=self._style,
+            HTML(f"<system>system</system> > {html.escape(text)}"), style=self._style
         )
 
-    def print_error_message(self, text: str) -> None:
-        content = html.escape(text)
+    def print_error(self, text: str) -> None:
+        """打印错误警告信息"""
         print_formatted_text(
-            HTML(f"<error>error</error> > {content}"),
-            style=self._style,
+            HTML(f"<error>error</error> > {html.escape(text)}"), style=self._style
         )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="独立 CLI 客户端")
-    parser.add_argument(
-        "--connect-retry-delay",
-        type=float,
-        default=3.0,
-        help="服务不可达时重试连接间隔（秒）",
-    )
-    parser.add_argument(
-        "--sse-reconnect-delay",
-        type=float,
-        default=1.0,
-        help="SSE 断线后重连等待秒数",
-    )
-    parser.add_argument(
-        "--sse-timeout",
-        type=float,
-        default=30.0,
-        help="SSE 连接 socket 超时时间（秒）",
-    )
-    parser.add_argument(
-        "--http-timeout",
-        type=float,
-        default=5.0,
-        help="HTTP 请求超时时间（秒）",
-    )
-    args = parser.parse_args()
-    if args.connect_retry_delay <= 0:
-        parser.error("--connect-retry-delay 必须大于 0")
-    if args.sse_reconnect_delay <= 0:
-        parser.error("--sse-reconnect-delay 必须大于 0")
-    if args.sse_timeout <= 0:
-        parser.error("--sse-timeout 必须大于 0")
-    if args.http_timeout <= 0:
-        parser.error("--http-timeout 必须大于 0")
-    return args
+# ==========================================
+# ⚙️ 核心业务流程控制
+# ==========================================
+def wait_for_gateway(client: GatewayClient, ui: TerminalUI, retry_delay: float) -> None:
+    """阻塞等待网关服务启动上线"""
+    while True:
+        if client.check_health():
+            ui.print_system("外部聊天服务连接成功。")
+            return
+        ui.print_error(f"无法连接服务，{retry_delay:g} 秒后重试（Ctrl+C 取消）。")
+        time.sleep(retry_delay)
 
 
-def wait_for_service_online(
-    client: ExternalServiceClient,
-    ui: CLIUserInterface,
-    retry_delay_seconds: float,
-) -> None:
-    """阻塞等待外部服务可用，失败后按固定间隔持续重试。"""
+def sync_historical_messages(
+    client: GatewayClient, state: MessageState, ui: TerminalUI, retry_delay: float
+) -> list[ChatMessage]:
+    """启动时同步错过的历史消息"""
     while True:
         try:
-            if client.health():
-                ui.print_system_message("外部聊天服务连接成功。")
-                return
-            ui.print_error_message("健康检查返回异常状态。")
-        except ExternalServiceError as exc:
-            ui.print_error_message(f"无法连接外部聊天服务：{exc}")
-
-        ui.print_system_message(
-            f"{retry_delay_seconds:g} 秒后重试连接（Ctrl+C 取消）。"
-        )
-        time.sleep(retry_delay_seconds)
-
-
-def load_initial_messages_with_retry(
-    client: ExternalServiceClient,
-    state: LocalMessageState,
-    ui: CLIUserInterface,
-    retry_delay_seconds: float,
-) -> list[ExternalMessage]:
-    """启动阶段拉取历史消息，失败后按固定间隔持续重试。"""
-    while True:
-        try:
-            initial_messages = client.list_messages(after_id=state.last_seen_id)
-            return state.merge_new_messages(initial_messages)
-        except ExternalServiceError as exc:
-            ui.print_error_message(f"启动同步失败：{exc}")
-            ui.print_system_message(
-                f"{retry_delay_seconds:g} 秒后重试拉取历史消息（Ctrl+C 取消）。"
+            # 根据本地记录的最后 ID 向服务器请求增量消息
+            return state.merge_new_messages(
+                client.fetch_messages(after_id=state.last_seen_id)
             )
-            time.sleep(retry_delay_seconds)
+        except (httpx.HTTPError, ValueError) as exc:
+            ui.print_error(f"拉取历史消息失败：{exc}，{retry_delay:g} 秒后重试。")
+            time.sleep(retry_delay)
 
 
-def start_sse_sync_worker(
-    client: ExternalServiceClient,
-    state: LocalMessageState,
-    ui: CLIUserInterface,
+def start_sse_worker(
+    client: GatewayClient,
+    state: MessageState,
+    ui: TerminalUI,
     stop_event: threading.Event,
-    reconnect_delay_seconds: float,
-    sse_timeout_seconds: float,
+    reconnect_delay: float,
+    timeout: float,
 ) -> threading.Thread:
-    def _handle_sse_event(
-        event_id: str | None,
-        event_name: str,
-        data_lines: list[str],
-    ) -> int | None:
-        _ = event_id
-        if event_name != "message" or not data_lines:
-            return None
+    """启动后台守护线程，通过 SSE 流实时监听新消息"""
 
-        raw_data = "\n".join(data_lines).strip()
-        if not raw_data:
-            return None
-
-        try:
-            payload = json.loads(raw_data)
-            message = client.parse_external_message(payload)
-        except (json.JSONDecodeError, ExternalServiceError):
-            ui.print_error_message("实时同步失败：收到非法 SSE 消息事件")
-            return None
-
-        new_messages = state.merge_new_messages([message])
-        for item in new_messages:
-            ui.print_synced_message(item)
-
-        return message.message_id
-
-    def _run() -> None:
+    def _listen() -> None:
         last_id = state.last_seen_id
-        while not stop_event.is_set():
-            try:
-                url = client.build_events_url(after_id=last_id)
-                req = request.Request(
-                    url=url,
-                    headers={"Accept": "text/event-stream"},
-                    method="GET",
-                )
-                with request.urlopen(req, timeout=sse_timeout_seconds) as resp:
-                    event_id: str | None = None
-                    event_name = "message"
-                    data_lines: list[str] = []
-                    for raw_line in resp:
-                        if stop_event.is_set():
-                            return
+        # 单独为 SSE 创建一个不限制读取超时的 Client，确保连接持久
+        with httpx.Client(base_url=client.server_url, timeout=timeout) as hx_client:
+            while not stop_event.is_set():
+                try:
+                    # 连接 SSE 频道，并通过 after_id 实现断点续传
+                    with connect_sse(
+                        hx_client, "GET", "/v1/events", params={"after_id": last_id}
+                    ) as event_source:
+                        for sse in event_source.iter_sse():
+                            if stop_event.is_set():
+                                return
 
-                        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
-                        if line == "":
-                            handled_id = _handle_sse_event(
-                                event_id=event_id,
-                                event_name=event_name,
-                                data_lines=data_lines,
-                            )
-                            if handled_id is not None:
-                                last_id = max(last_id, handled_id)
-                            event_id = None
-                            event_name = "message"
-                            data_lines = []
-                            continue
+                            # 仅处理名为 "message" 且包含数据的事件
+                            if sse.event == "message" and sse.data:
+                                try:
+                                    msg = ChatMessage.model_validate_json(sse.data)
+                                    new_messages = state.merge_new_messages([msg])
+                                    for item in new_messages:
+                                        ui.print_chat_message(item)
+                                        last_id = max(last_id, item.id)
+                                except Exception as e:
+                                    ui.print_error(f"SSE 消息解析失败: {e}")
 
-                        if line.startswith(":"):
-                            continue
+                except (httpx.RequestError, TimeoutError) as exc:
+                    ui.print_error(f"实时同步断开：{exc}，{reconnect_delay:g} 秒后重连")
+                    stop_event.wait(reconnect_delay)
 
-                        field, sep, value = line.partition(":")
-                        if not sep:
-                            continue
-                        if value.startswith(" "):
-                            value = value[1:]
-
-                        if field == "id":
-                            event_id = value
-                        elif field == "event":
-                            event_name = value
-                        elif field == "data":
-                            data_lines.append(value)
-
-                    handled_id = _handle_sse_event(
-                        event_id=event_id,
-                        event_name=event_name,
-                        data_lines=data_lines,
-                    )
-                    if handled_id is not None:
-                        last_id = max(last_id, handled_id)
-            except (ExternalServiceError, error.URLError, TimeoutError) as exc:
-                ui.print_error_message(
-                    f"实时同步失败：{exc}，{reconnect_delay_seconds:g} 秒后重连"
-                )
-            finally:
-                stop_event.wait(reconnect_delay_seconds)
-
-    worker = threading.Thread(
-        target=_run,
-        name="cli-client-sse-sync",
-        daemon=True,
-    )
+    # 设为 daemon=True 确保主线程退出时，该监听线程自动销毁
+    worker = threading.Thread(target=_listen, name="cli-sse-worker", daemon=True)
     worker.start()
     return worker
 
 
-def run_cli_client() -> None:
-    args = parse_args()
-    ui = CLIUserInterface()
+# ==========================================
+# 🚀 应用程序入口
+# ==========================================
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="独立 CLI 客户端")
+    parser.add_argument(
+        "--connect-retry-delay", type=float, default=DEFAULT_CONNECT_RETRY_DELAY
+    )
+    parser.add_argument(
+        "--sse-reconnect-delay", type=float, default=DEFAULT_SSE_RECONNECT_DELAY
+    )
+    parser.add_argument("--sse-timeout", type=float, default=DEFAULT_SSE_TIMEOUT)
+    parser.add_argument("--http-timeout", type=float, default=DEFAULT_HTTP_TIMEOUT)
+    return parser.parse_args()
 
+
+def main() -> None:
+    args = parse_args()
+    ui = TerminalUI()
+
+    # 1. 引导输入服务器地址
     try:
         server_url = ui.prompt_server_url(default_url=DEFAULT_SERVER_URL)
     except (KeyboardInterrupt, EOFError):
-        print("\n已取消连接。")
         return
 
-    client = ExternalServiceClient(
-        server_url=server_url,
-        timeout_seconds=args.http_timeout,
-    )
+    client = GatewayClient(server_url=server_url, timeout_seconds=args.http_timeout)
 
     try:
-        wait_for_service_online(
-            client=client,
-            ui=ui,
-            retry_delay_seconds=args.connect_retry_delay,
-        )
-    except KeyboardInterrupt:
-        ui.print_system_message("已取消连接。")
-        return
+        # 2. 等待网关上线并打印欢迎语
+        wait_for_gateway(client, ui, args.connect_retry_delay)
+        ui.print_intro(server_url=server_url)
 
-    ui.print_intro(server_url=server_url)
-    state = LocalMessageState()
-    stop_event = threading.Event()
-    sse_worker: threading.Thread | None = None
+        # 3. 同步历史消息
+        state = MessageState()
+        for msg in sync_historical_messages(
+            client, state, ui, args.connect_retry_delay
+        ):
+            ui.print_chat_message(msg)
 
-    try:
-        try:
-            initial_messages = load_initial_messages_with_retry(
-                client=client,
-                state=state,
-                ui=ui,
-                retry_delay_seconds=args.connect_retry_delay,
-            )
-        except KeyboardInterrupt:
-            ui.print_system_message("已取消同步，CLI 客户端退出。")
-            return
-        for message in initial_messages:
-            ui.print_synced_message(message)
+        stop_event = threading.Event()
+        sse_worker: threading.Thread | None = None
 
+        # 4. 开启交互主循环
+        # patch_stdout 确保后台 SSE 线程打印消息时，不会打断用户正在输入的内容
         with patch_stdout():
-            sse_worker = start_sse_sync_worker(
-                client=client,
-                state=state,
-                ui=ui,
-                stop_event=stop_event,
-                reconnect_delay_seconds=args.sse_reconnect_delay,
-                sse_timeout_seconds=args.sse_timeout,
+            sse_worker = start_sse_worker(
+                client,
+                state,
+                ui,
+                stop_event,
+                args.sse_reconnect_delay,
+                args.sse_timeout,
             )
+
             while True:
                 try:
                     text = ui.prompt_user_text().strip()
-                except KeyboardInterrupt:
-                    ui.print_system_message("CLI 客户端已退出。")
-                    break
-                except EOFError:
-                    ui.print_system_message("输入流结束，CLI 客户端已退出。")
+                except (KeyboardInterrupt, EOFError):
+                    ui.print_system("CLI 客户端已退出。")
                     break
 
                 if not text:
-                    ui.print_system_message("请输入内容后再发送。")
                     continue
                 if text in {"/exit", "/quit"}:
-                    ui.print_system_message("CLI 客户端已退出。")
+                    ui.print_system("CLI 客户端已退出。")
                     break
 
+                # 提交用户的消息到网关
                 try:
                     client.send_message(sender="user", text=text)
-                except ExternalServiceError as exc:
-                    ui.print_error_message(f"发送失败：{exc}")
+                except (httpx.HTTPError, ValueError) as exc:
+                    ui.print_error(f"发送失败：{exc}")
+
+    except KeyboardInterrupt:
+        ui.print_system("已取消，CLI 客户端退出。")
     finally:
-        stop_event.set()
-        if sse_worker is not None and sse_worker.is_alive():
+        # 优雅停机：通知后台线程停止，并等待其回收
+        if "stop_event" in locals():
+            stop_event.set()
+        if (
+            "sse_worker" in locals()
+            and sse_worker is not None
+            and sse_worker.is_alive()
+        ):
             sse_worker.join(timeout=2.0)
 
 
 if __name__ == "__main__":
-    run_cli_client()
-
+    main()
