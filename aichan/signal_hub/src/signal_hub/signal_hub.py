@@ -4,7 +4,7 @@ import queue
 import threading
 
 from core.entities import AgentSignal
-from hub.signal_processor import SignalProcessor
+from signal_hub.signal_processor import SignalProcessor
 
 from core.logger import logger
 
@@ -68,7 +68,7 @@ class SignalHub:
         self._is_running = True
         self._worker = threading.Thread(
             target=self._heartbeat_loop,
-            name="hub-heartbeat",
+            name="signal-hub-heartbeat",
             daemon=True,
         )
         self._worker.start()

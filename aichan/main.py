@@ -11,9 +11,9 @@ from langchain_openai import ChatOpenAI
 
 from core.config import settings
 from core.logger import logger
-from hub.channel_poll_trigger import ChannelPollTrigger
-from hub.signal_hub import SignalHub
-from hub.signal_processor import SignalProcessor
+from signal_hub.channel_poll_trigger import ChannelPollTrigger
+from signal_hub.signal_hub import SignalHub
+from signal_hub.signal_processor import SignalProcessor
 from mcp_hub import MCPManager, MCPServerConfig
 
 
@@ -84,7 +84,7 @@ def build_channel_config_registry(
             raise ValueError(f"MCP_SERVER_URLS 中存在非法 URL：{config.sse_url}")
         base_url = f"{parsed.scheme}://{parsed.netloc}"
         channel_config_registry[config.name] = {
-            "gateway_type": "channel",
+            "channel_type": "channel",
             "base_url": base_url,
         }
     return channel_config_registry

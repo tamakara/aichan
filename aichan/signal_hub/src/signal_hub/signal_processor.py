@@ -40,15 +40,15 @@ class SignalProcessor:
         """根据信号中的通道名定位通道配置。"""
         config = self._channel_config_registry.get(channel_name)
         if config is None:
-            raise ValueError(f"未找到网关配置: {channel_name}")
+            raise ValueError(f"未找到通道配置: {channel_name}")
 
-        gateway_type = self._read_config_value(config, "gateway_type")
-        if gateway_type != "channel":
-            raise ValueError(f"网关不是 channel 类型: {channel_name}")
+        channel_type = self._read_config_value(config, "channel_type")
+        if channel_type != "channel":
+            raise ValueError(f"通道配置不是 channel 类型: {channel_name}")
 
         base_url = self._read_config_value(config, "base_url")
         if not base_url:
-            raise ValueError(f"网关 base_url 缺失: {channel_name}")
+            raise ValueError(f"通道配置 base_url 缺失: {channel_name}")
         return base_url
 
     @staticmethod
@@ -69,7 +69,7 @@ class SignalProcessor:
         return old_messages, new_messages
 
     def _list_channel_messages(self, channel_name: str, base_url: str) -> list[ChannelMessage]:
-        """从通道网关拉取完整消息列表并映射为内部消息格式。"""
+        """从通道服务拉取完整消息列表并映射为内部消息格式。"""
         try:
             with httpx.Client(timeout=self._request_timeout_seconds) as client:
                 response = client.get(f"{base_url}/v1/messages", params={"after_id": 0})
@@ -114,7 +114,7 @@ class SignalProcessor:
 
     @staticmethod
     def _map_sender_to_role(sender: object) -> str:
-        """将网关 sender 字段映射到内部消息角色。"""
+        """将通道 sender 字段映射到内部消息角色。"""
         if sender == "user":
             return "user"
         if sender in {"assistant", "ai", "system"}:
@@ -127,7 +127,7 @@ class SignalProcessor:
         base_url: str,
         content: str,
     ) -> ChannelMessage:
-        """向通道网关写回 assistant 消息。"""
+        """向通道服务写回 assistant 消息。"""
         payload = {"sender": "ai", "text": content}
         try:
             with httpx.Client(timeout=self._request_timeout_seconds) as client:

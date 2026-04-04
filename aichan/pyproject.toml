@@ -12,17 +12,17 @@ dependencies = [
     "langchain-core>=1.2.20",
     "langchain-openai>=1.1.11",
     "memory",
-    "hub",
+    "signal_hub",
     "uvicorn>=0.37.0",
 ]
 
 [tool.uv.workspace]
-members = ["agent", "core", "hub", "memory", "mcp_hub"]
+members = ["agent", "core", "signal_hub", "memory", "mcp_hub"]
 
 [tool.uv.sources]
 agent = { workspace = true }
 core = { workspace = true }
 memory = { workspace = true }
-hub = { workspace = true }
+signal_hub = { workspace = true }
 mcp_hub = { workspace = true }
 

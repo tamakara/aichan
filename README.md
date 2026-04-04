@@ -44,7 +44,6 @@ uv sync
 
 - `MCP_SERVER_URLS`（逗号分隔 MCP SSE 地址，默认 `http://localhost:9000/mcp/sse`）
 - `CLI_SERVER_HOST` / `CLI_SERVER_PORT`
-- `CLI_GATEWAY_BASE_HOST`
 
 ### 3. 启动大脑
 
@@ -56,12 +55,14 @@ uv run python main.py
 ### 4. 启动 CLI MCP Server
 
 ```bash
-python mcp_servers/cli/server.py
+cd mcp_servers
+uv sync
+uv run --package cli-mcp-server python cli/server.py
 ```
 
 ## 关键 API
 
-- CLI 网关消息接口：
+- CLI 通道消息接口：
   - `GET /v1/messages?after_id=0`
   - `POST /v1/messages`
   - `GET /v1/events?after_id=0`

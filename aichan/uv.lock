@@ -7,7 +7,7 @@ members = [
     "agent",
     "aichan",
     "core",
-    "hub",
+    "signal-hub",
     "mcp-hub",
     "memory",
 ]
@@ -43,7 +43,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "httpx-sse" },
-    { name = "hub" },
+    { name = "signal-hub" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "mcp-hub" },
@@ -58,7 +58,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.118.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "httpx-sse", specifier = ">=0.4.0" },
-    { name = "hub", editable = "hub" },
+    { name = "signal-hub", editable = "signal_hub" },
     { name = "langchain-core", specifier = ">=1.2.20" },
     { name = "langchain-openai", specifier = ">=1.1.11" },
     { name = "mcp-hub", editable = "mcp_hub" },
@@ -487,9 +487,9 @@ wheels = [
 ]
 
 [[package]]
-name = "hub"
+name = "signal-hub"
 version = "0.1.0"
-source = { editable = "hub" }
+source = { editable = "signal_hub" }
 dependencies = [
     { name = "agent" },
     { name = "core" },

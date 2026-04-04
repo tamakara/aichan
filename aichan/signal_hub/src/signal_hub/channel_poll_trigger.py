@@ -7,7 +7,7 @@ import httpx
 
 from core.entities import AgentSignal
 from core.logger import logger
-from hub.signal_hub import SignalHub
+from signal_hub.signal_hub import SignalHub
 
 
 class ChannelPollTrigger:
@@ -80,8 +80,8 @@ class ChannelPollTrigger:
                 )
 
     async def _poll_single_channel(self, channel_name: str, config: Any) -> None:
-        gateway_type = self._read_config_value(config=config, field="gateway_type")
-        if gateway_type != "channel":
+        channel_type = self._read_config_value(config=config, field="channel_type")
+        if channel_type != "channel":
             return
 
         base_url = self._read_config_value(config=config, field="base_url")
