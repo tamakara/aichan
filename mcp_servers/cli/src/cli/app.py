@@ -6,10 +6,10 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from .mcp_server import build_mcp_server_routes
-from .message_store import AsyncChatStore, ChatStore
-from .models import ChatMessage, SendMessageRequest
-from .settings import CLI_SERVER_SSE_WAIT_TIMEOUT_SECONDS
+from cli.mcp_server import McpSessionBroadcaster, build_mcp_server_routes
+from cli.message_store import AsyncChatStore, ChatStore
+from cli.models import ChatMessage, SendMessageRequest
+from cli.settings import CLI_SERVER_CHANNEL_NAME, CLI_SERVER_SSE_WAIT_TIMEOUT_SECONDS
 
 """
 FastAPI 应用装配层。
@@ -28,11 +28,21 @@ def build_cli_mcp_app(store: ChatStore | None = None) -> FastAPI:
     参数：
     - store: 可选消息存储实现，默认使用内存版 `AsyncChatStore`。
     """
-    chat_store = AsyncChatStore() if store is None else store
+    chat_store = (
+        AsyncChatStore(default_channel=CLI_SERVER_CHANNEL_NAME)
+        if store is None
+        else store
+    )
+    broadcaster = McpSessionBroadcaster()
     app = FastAPI(title="CLI MCP Server", version="4.0.0")
 
     # 挂载 MCP 协议路由：/mcp/sse 与 /mcp/messages。
-    app.router.routes.extend(build_mcp_server_routes(chat_store))
+    app.router.routes.extend(
+        build_mcp_server_routes(
+            store=chat_store,
+            broadcaster=broadcaster,
+        )
+    )
 
     @app.get("/health")
     async def health() -> dict[str, object]:
@@ -94,6 +104,11 @@ def build_cli_mcp_app(store: ChatStore | None = None) -> FastAPI:
                 sender=payload.sender, text=payload.text
             )
             logger.info("👤 [UI] 收到人类消息: {}", message.text)
+            if message.sender == "user":
+                await broadcaster.broadcast_new_message_alert(
+                    channel=CLI_SERVER_CHANNEL_NAME,
+                    message_id=message.id,
+                )
             return message
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

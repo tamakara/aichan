@@ -12,6 +12,8 @@ CLI 通道数据模型定义。
 
 # 通道身份枚举：当前只允许 AI 与用户两类消息来源。
 CLIChannelIdentity = Literal["ai", "user"]
+# 通道名：CLI Server 当前固定为 `cli`，但字段保留字符串便于未来扩展。
+ChannelName = str
 
 
 class SendMessageRequest(BaseModel):
@@ -31,6 +33,21 @@ class ChatMessage(BaseModel):
     # 消息发送方。
     sender: CLIChannelIdentity
     # 消息内容文本。
+    text: str
+    # 服务器生成的 UTC ISO8601 时间戳。
+    created_at: str
+
+
+class UnreadMessage(BaseModel):
+    """MCP `fetch_unread_messages` 工具返回的统一未读消息结构。"""
+
+    # 消息所属渠道，未来可扩展为 qq / wechat / email 等。
+    channel: ChannelName
+    # 通道内消息 ID（与 ChatMessage.id 对齐）。
+    message_id: int = Field(..., ge=1)
+    # 发送方身份（通常是 user）。
+    sender: CLIChannelIdentity
+    # 消息正文。
     text: str
     # 服务器生成的 UTC ISO8601 时间戳。
     created_at: str

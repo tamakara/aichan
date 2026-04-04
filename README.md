@@ -1,10 +1,10 @@
 # AIChan
 
-AIChan 当前采用 **MCPHub + SignalHub** 的动态架构：
+AIChan 当前采用 **MCPHub + WakeUpRuntime** 的动态架构：
 
 - 大脑通过 `MCPHub` 连接一个或多个 MCP Server，并动态发现可调用工具；
-- `ChannelPollTrigger` 定时轮询通道消息并向 `SignalHub` 发送处理信号；
-- `SignalProcessor` 串行消费信号，拉取增量消息、获取 MCP 工具快照并调用 Agent 推理回写。
+- 通道 MCP Server 在收到人类消息后仅发送 `new_message_alert` 唤醒通知；
+- 大脑侧 `WakeUpAgentRuntime` 被唤醒后，先调用 `fetch_unread_messages` 拉取未读，再通过 `send_*` 工具动作回复。
 
 > 本仓库已完成对旧静态插件模式的硬切换，不保留兼容链路。
 
@@ -13,14 +13,10 @@ AIChan 当前采用 **MCPHub + SignalHub** 的动态架构：
 1. `aichan/mcp_hub`
    - `MCPManager`：统一管理 MCP Server 生命周期；
    - 动态发现 `mcp.types.Tool` 并包装为 LangChain `StructuredTool`。
-2. `aichan/hub`
-   - `SignalHub`：统一信号排队与顺序消费。
-   - `ChannelPollTrigger`：轮询 `/v1/messages`，在新 user 消息出现时触发 `AgentSignal`。
-   - `SignalProcessor`：基于通道配置拉取消息，并通过 MCPHub 获取工具驱动 Agent。
-3. `aichan/agent`
-   - 基于 LangGraph 执行推理与工具调用闭环。
-4. `mcp_servers/cli`
-   - CLI MCP Server，提供 `/mcp/sse`（MCP 隧道）与 `/v1/messages`、`/v1/events`（通道 API）。
+2. `aichan/agent`
+   - 基于 LangGraph 执行唤醒后的 Tool-as-Action 推理闭环。
+3. `mcp_servers/cli`
+   - CLI MCP Server，提供 `/mcp/sse`（MCP 隧道）与 `/v1/messages`、`/v1/events`（通道 API），并实现 `fetch_unread_messages` + `new_message_alert`。
 
 ## 快速开始
 
@@ -77,7 +73,6 @@ uv run --package cli-mcp-server python -m cli.server
 ├─ aichan
 │  ├─ main.py
 │  ├─ mcp_hub
-│  ├─ hub
 │  ├─ agent
 │  ├─ core
 │  └─ memory

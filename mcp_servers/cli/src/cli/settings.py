@@ -14,6 +14,8 @@ CLI MCP Server 运行时配置。
 CLI_SERVER_HOST = os.getenv("CLI_SERVER_HOST", "localhost")
 # 服务监听端口。
 CLI_SERVER_PORT = int(os.getenv("CLI_SERVER_PORT", "9000"))
+# 当前网关负责的通道名。默认 cli，后续复制网关时可覆写。
+CLI_SERVER_CHANNEL_NAME = os.getenv("CLI_SERVER_CHANNEL_NAME", "cli").strip() or "cli"
 # Uvicorn Keep-Alive 超时时间，适当缩短可减少空闲连接占用。
 CLI_SERVER_TIMEOUT_KEEP_ALIVE_SECONDS = 1
 # 优雅停机等待时间，确保连接在短时间内可被正确关闭。

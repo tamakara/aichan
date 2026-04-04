@@ -1,5 +1,5 @@
-"""agent 包：提供 Agent 推理引擎实现。"""
+"""agent 包：提供基于唤醒事件的推理运行时。"""
 
-from agent.agent import Agent
+from agent.wakeup_runtime import WakeUpAgentRuntime
 
-__all__ = ["Agent"]
+__all__ = ["WakeUpAgentRuntime"]

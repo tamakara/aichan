@@ -143,7 +143,7 @@ wheels = [
 [[package]]
 name = "cli-mcp-server"
 version = "0.1.0"
-source = { virtual = "cli" }
+source = { editable = "cli" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -403,7 +403,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cli-mcp-server", virtual = "cli" }]
+requires-dist = [{ name = "cli-mcp-server", editable = "cli" }]
 
 [[package]]
 name = "pycparser"

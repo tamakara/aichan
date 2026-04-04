@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .models import CLIChannelIdentity, ChatMessage
+from cli.models import CLIChannelIdentity, ChannelName, ChatMessage, UnreadMessage
 
 """
 消息存储抽象与默认实现。
@@ -30,6 +31,9 @@ class ChatStore(Protocol):
     async def send_message(self, sender: CLIChannelIdentity, text: str) -> ChatMessage:
         """写入一条消息并返回完整消息对象。"""
 
+    async def fetch_unread_messages(self) -> list[UnreadMessage]:
+        """拉取全部未读消息并清空未读池（drain 语义）。"""
+
 
 class AsyncChatStore:
     """
@@ -40,11 +44,15 @@ class AsyncChatStore:
     - `_new_message_cond` 用于通知等待中的 SSE 消费者。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, default_channel: ChannelName = "cli") -> None:
         # 按时间顺序保存全部消息。
         self._messages: list[ChatMessage] = []
+        # 默认通道名（当前 CLI 场景固定为 cli，预留未来扩展）。
+        self._default_channel = default_channel
         # 自增主键起始值。
         self._next_id = 1
+        # 未读池：按 channel 聚合，调用 fetch_unread_messages 时原子清空。
+        self._unread_by_channel: dict[str, list[UnreadMessage]] = defaultdict(list)
         # 互斥锁：保护共享状态。
         self._lock = asyncio.Lock()
         # 条件变量：新消息到达时唤醒等待方。
@@ -78,12 +86,21 @@ class AsyncChatStore:
                 messages = [msg for msg in self._messages if msg.id > after_id]
             return messages
 
-    async def send_message(self, sender: CLIChannelIdentity, text: str) -> ChatMessage:
+    async def send_message(
+        self,
+        sender: CLIChannelIdentity,
+        text: str,
+        channel: ChannelName | None = None,
+    ) -> ChatMessage:
         """
         写入一条消息并广播通知。
 
         会先做空白清洗，避免存储无意义消息。
         """
+        target_channel = (channel or self._default_channel).strip()
+        if not target_channel:
+            raise ValueError("channel 不能为空")
+
         clean_text = text.strip()
         if not clean_text:
             raise ValueError("text 不能为空")
@@ -95,7 +112,27 @@ class AsyncChatStore:
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
             self._messages.append(message)
+            # 仅将外部入站消息进入未读池，避免 AI 消息被二次拉取造成循环。
+            if sender == "user":
+                self._unread_by_channel[target_channel].append(
+                    UnreadMessage(
+                        channel=target_channel,
+                        message_id=message.id,
+                        sender=sender,
+                        text=message.text,
+                        created_at=message.created_at,
+                    )
+                )
             self._next_id += 1
             # 新消息写入完成后唤醒所有等待中的消费者（如 SSE 连接）。
             self._new_message_cond.notify_all()
         return message
+
+    async def fetch_unread_messages(self) -> list[UnreadMessage]:
+        """原子拉取并清空所有通道未读消息。"""
+        async with self._lock:
+            drained_messages: list[UnreadMessage] = []
+            for channel in sorted(self._unread_by_channel.keys()):
+                drained_messages.extend(self._unread_by_channel[channel])
+            self._unread_by_channel.clear()
+            return drained_messages

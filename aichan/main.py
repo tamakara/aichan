@@ -9,11 +9,9 @@ import uvicorn
 from fastapi import FastAPI
 from langchain_openai import ChatOpenAI
 
+from agent import WakeUpAgentRuntime
 from core.config import settings
 from core.logger import logger
-from signal_hub.channel_poll_trigger import ChannelPollTrigger
-from signal_hub.signal_hub import SignalHub
-from signal_hub.signal_processor import SignalProcessor
 from mcp_hub import MCPManager, MCPServerConfig
 
 
@@ -67,44 +65,20 @@ def build_mcp_server_configs(raw_urls: str) -> list[MCPServerConfig]:
     return configs
 
 
-def build_channel_config_registry(
-    server_configs: list[MCPServerConfig],
-) -> dict[str, dict[str, str]]:
-    """
-    基于 MCP Server 配置构造通道配置映射。
-
-    约定：
-    - 通道名与 MCP Server 别名一致；
-    - 通道 base_url 取 MCP SSE 地址的 origin（scheme + netloc）。
-    """
-    channel_config_registry: dict[str, dict[str, str]] = {}
-    for config in server_configs:
-        parsed = urlparse(config.sse_url)
-        if not parsed.scheme or not parsed.netloc:
-            raise ValueError(f"MCP_SERVER_URLS 中存在非法 URL：{config.sse_url}")
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-        channel_config_registry[config.name] = {
-            "channel_type": "channel",
-            "base_url": base_url,
-        }
-    return channel_config_registry
-
-
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """
     应用生命周期管理。
 
     启动阶段：
-    1. 初始化 SignalProcessor；
-    2. 启动 SignalHub 心跳主循环；
-    3. 启动通道轮询触发器。
+    1. 初始化 MCPManager；
+    2. 启动 WakeUpAgentRuntime。
 
     关闭阶段：
-    1. 停止轮询触发器；
-    2. 停止 SignalHub。
+    1. 停止 WakeUpAgentRuntime；
+    2. 停止 MCPManager。
     """
-    logger.info("🚀 [Main] AICHAN 大脑生命周期启动中（MCPHub + SignalHub）")
+    logger.info("🚀 [Main] AICHAN 大脑生命周期启动中（Pull + Tool-as-Action）")
 
     server_configs = build_mcp_server_configs(settings.mcp_server_urls)
     mcp_manager = MCPManager(
@@ -112,33 +86,20 @@ async def app_lifespan(app: FastAPI):
     )
     await mcp_manager.start()
 
-    channel_config_registry = build_channel_config_registry(server_configs)
-    signal_processor = SignalProcessor(
+    wakeup_runtime = WakeUpAgentRuntime(
         llm_factory=build_llm_client,
-        channel_config_registry=channel_config_registry,
         mcp_manager=mcp_manager,
     )
-    signal_hub = SignalHub(signal_processor=signal_processor)
-    signal_hub.start_heartbeat()
+    await wakeup_runtime.start()
 
-    signal_trigger = ChannelPollTrigger(
-        signal_hub=signal_hub,
-        channel_config_registry=channel_config_registry,
-    )
-    await signal_trigger.start()
-
-    app.state.signal_processor = signal_processor
-    app.state.signal_hub = signal_hub
-    app.state.signal_trigger = signal_trigger
     app.state.mcp_manager = mcp_manager
-    app.state.channel_config_registry = channel_config_registry
+    app.state.wakeup_runtime = wakeup_runtime
 
     try:
         yield
     finally:
         logger.info("🛑 [Main] AICHAN 大脑生命周期关闭中")
-        await signal_trigger.stop()
-        signal_hub.stop_heartbeat(wait=True)
+        await wakeup_runtime.stop()
         await mcp_manager.stop()
         logger.info("✅ [Main] AICHAN 大脑已停止")
 
@@ -159,26 +120,20 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, Any]:
         mcp_manager: MCPManager | None = getattr(app.state, "mcp_manager", None)
-        signal_hub: SignalHub | None = getattr(app.state, "signal_hub", None)
-        channel_config_registry: dict[str, Any] = getattr(
-            app.state, "channel_config_registry", {}
-        )
         mcp_tool_count = 0
         mcp_server_count = 0
-        queue_size = 0
+        wakeup_queue_size = 0
         if mcp_manager is not None:
             mcp_server_count = mcp_manager.get_connected_server_count()
             mcp_tool_count = len(await mcp_manager.get_all_tools(refresh=False))
-        if signal_hub is not None:
-            queue_size = signal_hub.signal_queue.qsize()
+            wakeup_queue_size = mcp_manager.get_wakeup_queue().qsize()
 
         return {
             "ok": True,
             "service": "aichan_brain",
-            "channel_count": len(channel_config_registry),
             "mcp_server_count": mcp_server_count,
             "mcp_tool_count": mcp_tool_count,
-            "signal_queue_size": queue_size,
+            "wakeup_queue_size": wakeup_queue_size,
         }
 
     return app

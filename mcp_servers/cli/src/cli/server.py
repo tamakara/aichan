@@ -3,8 +3,8 @@ from __future__ import annotations
 import uvicorn
 from loguru import logger
 
-from .app import build_cli_mcp_app
-from .settings import (
+from cli.app import build_cli_mcp_app
+from cli.settings import (
     CLI_SERVER_HOST,
     CLI_SERVER_PORT,
     CLI_SERVER_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS,
