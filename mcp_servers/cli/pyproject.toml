@@ -1,5 +1,5 @@
 [project]
-name = "cli_mcp_server"
+name = "cli-mcp-server"
 version = "0.1.0"
 description = "CLI MCP server module"
 requires-python = ">=3.10"

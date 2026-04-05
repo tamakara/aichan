@@ -63,7 +63,7 @@ class AgentRuntime:
     1. 挂起等待 MCPHub 全局唤醒事件；
     2. 唤醒后立即 clear 事件标记；
     3. 运行 LLM + Tool 循环；
-    4. 仅把普通文本记录为内心独白，用户可见输出必须来自 send_* 工具副作用。
+    4. 仅把普通文本记录为内心独白，用户可见输出必须来自 send 工具副作用。
     """
 
     def __init__(
@@ -162,7 +162,7 @@ class AgentRuntime:
         if not send_tool_names:
             monologue = self._extract_inner_monologue(all_messages)
             logger.info(
-                "🧠 [AgentRuntime] 本轮无 send_* 工具调用，仅记录内心独白。耗时={}ms\n{}",
+                "🧠 [AgentRuntime] 本轮无 send 工具调用，仅记录内心独白。耗时={}ms\n{}",
                 elapsed_ms,
                 render_panel(monologue),
             )
@@ -234,10 +234,10 @@ class AgentRuntime:
 
     @staticmethod
     def _collect_send_tool_calls(messages: list[BaseMessage]) -> list[str]:
-        """提取所有 send_{channel}_message 工具调用名。"""
+        """提取所有 send_message / send_{channel}_message 工具调用名。"""
         send_tools: list[str] = []
-        server_tool_pattern = re.compile(r".*__send_[A-Za-z0-9_]+_message$")
-        plain_tool_pattern = re.compile(r"^send_[A-Za-z0-9_]+_message$")
+        server_tool_pattern = re.compile(r".*__send(?:_[A-Za-z0-9_]+)?_message$")
+        plain_tool_pattern = re.compile(r"^send(?:_[A-Za-z0-9_]+)?_message$")
         for message in messages:
             if not isinstance(message, AIMessage):
                 continue

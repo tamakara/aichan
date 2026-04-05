@@ -3,11 +3,11 @@ name = "mcp-servers"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "cli_mcp_server",
+    "cli-mcp-server",
 ]
 
 [tool.uv.workspace]
 members = ["cli"]
 
 [tool.uv.sources]
-cli_mcp_server = { workspace = true }
+"cli-mcp-server" = { workspace = true }

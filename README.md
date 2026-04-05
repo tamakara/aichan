@@ -4,7 +4,7 @@ AIChan 当前采用 **MCPHub + AgentRuntime** 的动态架构：
 
 - 大脑通过 `MCPHub` 连接一个或多个 MCP Server，并动态发现可调用工具；
 - 通道 MCP Server 在收到人类消息后仅发送 `aichan/wakeup` 自定义唤醒通知；
-- 大脑侧 `AgentRuntime` 被唤醒后，先调用 `fetch_unread_messages` 拉取未读，再通过 `send_*` 工具动作回复。
+- 大脑侧 `AgentRuntime` 被唤醒后，先调用 `fetch_unread_messages` 拉取未读，再通过发送工具（如 `send_message`）动作回复。
 - 只要 MCP endpoint 发送 `aichan/wakeup`，Hub 就会触发全局唤醒事件（不做 channel/reason 过滤）。
 
 > 本仓库已完成对旧静态插件模式的硬切换，不保留兼容链路。

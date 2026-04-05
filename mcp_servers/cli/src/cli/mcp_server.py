@@ -26,6 +26,7 @@ FETCH_MESSAGE_HISTORY_DEFAULT_PAGE_SIZE = 50
 FETCH_MESSAGE_HISTORY_MAX_PAGE_SIZE = 200
 AICHAN_WAKEUP_METHOD = "aichan/wakeup"
 AICHAN_WAKEUP_REASON_NEW_MESSAGE = "new_message"
+SEND_TOOL_NAME = "send_message"
 
 
 def _read_int_argument(
@@ -195,7 +196,7 @@ def build_mcp_server(store: ChatStore, broadcaster: McpSessionBroadcaster) -> Se
         # 向 MCP 客户端声明当前可用工具及其 JSON Schema。
         return [
             types.Tool(
-                name="send_cli_message",
+                name=SEND_TOOL_NAME,
                 description="向 CLI 终端用户发送一条文本消息。当你想回复用户的提问，或者主动发起对话时，请调用此工具。",
                 inputSchema={
                     "type": "object",
@@ -257,13 +258,13 @@ def build_mcp_server(store: ChatStore, broadcaster: McpSessionBroadcaster) -> Se
     ]:
         await broadcaster.register_from_request_context(mcp_server)
         # 统一工具调用入口：根据工具名路由到具体业务处理。
-        if name == "send_cli_message":
+        if name == SEND_TOOL_NAME:
             if not arguments or "text" not in arguments:
-                raise ValueError("调用 send_cli_message 缺少必须的参数 'text'")
+                raise ValueError(f"调用 {SEND_TOOL_NAME} 缺少必须的参数 'text'")
 
             text = arguments["text"]
             if not isinstance(text, str):
-                raise ValueError("send_cli_message 参数 'text' 必须是字符串")
+                raise ValueError(f"{SEND_TOOL_NAME} 参数 'text' 必须是字符串")
             logger.info("🤖 [MCP Tool] 收到大模型调用，准备发送消息: {}", text)
             # MCP 工具调用最终落到消息存储，供 UI 端读取或 SSE 推送。
             await store.send_message(sender="ai", text=text)
