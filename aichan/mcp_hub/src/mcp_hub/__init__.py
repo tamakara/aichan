@@ -1,10 +1,10 @@
 """MCP Hub 对外导出。"""
 
 from .manager import MCPManager
-from .models import MCPServerConfig, WakeUpEvent
+from .models import MCPServerConfig, WakeupSignal
 
 __all__ = [
     "MCPManager",
     "MCPServerConfig",
-    "WakeUpEvent",
+    "WakeupSignal",
 ]

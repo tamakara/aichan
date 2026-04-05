@@ -1,20 +1,86 @@
 from __future__ import annotations
 
 import asyncio
-import json
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import Any, Coroutine
+from typing import Any, Coroutine, cast
 
 import mcp.types as mcp_types
 from langchain_core.tools import StructuredTool
 from mcp.client.session import ClientSession
-from mcp.client.sse import sse_client
-from mcp.shared.session import RequestResponder
+from mcp.client.streamable_http import streamable_http_client
+from pydantic import RootModel
 
 from core.logger import logger
-from .models import MCPServerConfig, WakeUpEvent
+from .models import MCPServerConfig, WakeupSignal
 from .tools_wrapper import build_mcp_structured_tool, parse_call_tool_result
+
+AICHAN_WAKEUP_METHOD = "aichan/wakeup"
+
+
+def _to_dict_or_none(value: Any) -> dict[str, Any] | None:
+    """将对象尽量转换为 dict；失败则返回 None。"""
+    if isinstance(value, dict):
+        return value
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump()
+        if isinstance(dumped, dict):
+            return dumped
+    return None
+
+
+_CustomNotificationType = mcp_types.Notification[dict[str, Any] | None, str]
+
+
+class _ServerNotificationWithCustom(
+    RootModel[mcp_types.ServerNotificationType | _CustomNotificationType]
+):
+    pass
+
+
+class _AichanClientSession(ClientSession):
+    """
+    对 `ClientSession` 的最小扩展：
+    1. 接受 JSON-RPC custom notifications；
+    2. 提供 `on_notification(method)` 注册器。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._custom_notification_handlers: dict[
+            str,
+            list[Callable[[dict[str, Any] | None], Awaitable[None]]],
+        ] = {}
+        # 覆盖通知验证模型，允许 method 为任意字符串的 custom notification。
+        self._receive_notification_type = cast(Any, _ServerNotificationWithCustom)
+
+    def on_notification(self, method: str):
+        def _decorator(
+            func: Callable[[dict[str, Any] | None], Awaitable[None]]
+        ) -> Callable[[dict[str, Any] | None], Awaitable[None]]:
+            self._custom_notification_handlers.setdefault(method, []).append(func)
+            return func
+
+        return _decorator
+
+    async def _received_notification(self, notification: Any) -> None:
+        await super()._received_notification(notification)
+
+        root = getattr(notification, "root", None)
+        method = getattr(root, "method", None)
+        if not isinstance(method, str):
+            return
+
+        handlers = self._custom_notification_handlers.get(method)
+        if not handlers:
+            return
+
+        params = _to_dict_or_none(getattr(root, "params", None))
+        for handler in handlers:
+            await handler(params)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,20 +99,14 @@ class MCPManager:
     设计目标：
     1. 统一维护 MCP 会话生命周期；
     2. 动态发现并包装工具；
-    3. 为同步与异步调用链都提供稳定接口。
+    3. 以 MCP Custom Notification 触发全局唤醒 Event。
     """
 
     def __init__(
         self,
-        server_configs: list[MCPServerConfig] | None = None,
+        server_configs: list[MCPServerConfig],
     ) -> None:
-        self._server_configs = server_configs or [
-            MCPServerConfig(
-                name="cli_mcp",
-                sse_url="http://localhost:9000/mcp/sse",
-                required=True,
-            )
-        ]
+        self._server_configs = server_configs
 
         self._server_required: dict[str, bool] = {
             config.name: config.required for config in self._server_configs
@@ -54,7 +114,8 @@ class MCPManager:
         self._sessions: dict[str, ClientSession] = {}
         self._routes: dict[str, _WrappedToolRoute] = {}
         self._wrapped_tools: list[StructuredTool] = []
-        self._wakeup_queue: asyncio.Queue[WakeUpEvent] = asyncio.Queue()
+        self._wakeup_event = asyncio.Event()
+        self._last_wakeup_signal: WakeupSignal | None = None
 
         self._exit_stack: AsyncExitStack | None = None
         self._event_loop: asyncio.AbstractEventLoop | None = None
@@ -82,17 +143,17 @@ class MCPManager:
                     logger.info(
                         "✅ [MCPHub] 服务连接成功，name='{}'，url='{}'",
                         config.name,
-                        config.sse_url,
+                        config.endpoint_url,
                     )
                 except Exception as exc:
                     if config.required:
                         raise RuntimeError(
-                            f"强依赖 MCP 服务连接失败：name='{config.name}', url='{config.sse_url}'"
+                            f"强依赖 MCP 服务连接失败：name='{config.name}', url='{config.endpoint_url}'"
                         ) from exc
                     logger.warning(
                         "⚠️ [MCPHub] 可选服务连接失败，已忽略，name='{}'，url='{}'，error='{}: {}'",
                         config.name,
-                        config.sse_url,
+                        config.endpoint_url,
                         exc.__class__.__name__,
                         exc,
                     )
@@ -118,12 +179,20 @@ class MCPManager:
         self._sessions = {}
         self._routes = {}
         self._wrapped_tools = []
-        self._wakeup_queue = asyncio.Queue()
+        self._wakeup_event = asyncio.Event()
+        self._last_wakeup_signal = None
         self._event_loop = None
         self._exit_stack = None
 
         if exit_stack is not None:
-            await exit_stack.aclose()
+            try:
+                await exit_stack.aclose()
+            except Exception as exc:
+                logger.debug(
+                    "♻️ [MCPHub] 忽略停止阶段连接清理异常: {}: {}",
+                    exc.__class__.__name__,
+                    exc,
+                )
             logger.info("🛑 [MCPHub] MCPManager 连接资源已释放")
 
     async def get_all_tools(self, refresh: bool = True) -> list[StructuredTool]:
@@ -133,33 +202,37 @@ class MCPManager:
             await self._refresh_tools()
         return list(self._wrapped_tools)
 
-    def get_wakeup_queue(self) -> asyncio.Queue[WakeUpEvent]:
-        """返回 WakeUpEvent 队列（只读访问，不建议外部直接 put）。"""
+    def get_wakeup_event(self) -> asyncio.Event:
+        """返回全局唤醒事件。"""
         self._ensure_started()
-        return self._wakeup_queue
+        return self._wakeup_event
 
-    async def wait_wakeup_event(self, timeout: float | None = None) -> WakeUpEvent:
-        """
-        等待一条唤醒事件。
-
-        参数：
-        - timeout: 超时秒数，None 表示无限等待。
-        """
+    async def wait_for_wakeup(self) -> None:
+        """等待一条 MCP 唤醒通知。"""
         self._ensure_started()
-        if timeout is None:
-            return await self._wakeup_queue.get()
-        return await asyncio.wait_for(self._wakeup_queue.get(), timeout=timeout)
+        await self._wakeup_event.wait()
 
-    def drain_pending_wakeup_events(self) -> list[WakeUpEvent]:
-        """无阻塞拉取当前队列中所有待处理唤醒事件。"""
+    def clear_wakeup_event(self) -> None:
+        """清理唤醒事件标记。"""
         self._ensure_started()
-        drained: list[WakeUpEvent] = []
-        while True:
-            try:
-                drained.append(self._wakeup_queue.get_nowait())
-            except asyncio.QueueEmpty:
-                break
-        return drained
+        self._wakeup_event.clear()
+
+    def get_last_wakeup_signal(self) -> WakeupSignal | None:
+        """返回最近一次唤醒信号。"""
+        self._ensure_started()
+        return self._last_wakeup_signal
+
+    def get_last_wakeup_snapshot(self) -> dict[str, Any] | None:
+        """返回最近一次唤醒信号快照（用于健康检查等观测）。"""
+        signal = self.get_last_wakeup_signal()
+        if signal is None:
+            return None
+        return {
+            "server_name": signal.server_name,
+            "channel": signal.channel,
+            "reason": signal.reason,
+            "received_at": signal.received_at,
+        }
 
     def get_all_tools_sync(
         self,
@@ -251,125 +324,132 @@ class MCPManager:
         """返回当前已连接的 MCP 服务数量。"""
         return len(self._sessions)
 
-    async def _connect_single_server(self, config: MCPServerConfig) -> ClientSession:
+    async def _connect_single_server(self, config: MCPServerConfig) -> _AichanClientSession:
         if self._exit_stack is None:
             raise RuntimeError("MCPManager 尚未初始化 ExitStack")
 
-        streams = await self._exit_stack.enter_async_context(
-            sse_client(config.sse_url)
-        )
-        session = await self._exit_stack.enter_async_context(
-            ClientSession(
-                streams[0],
-                streams[1],
-                message_handler=self._build_session_message_handler(config.name),
+        # 先在临时栈里完成初始化，成功后再挂到全局 ExitStack，
+        # 避免初始化失败时触发跨任务的 cancel scope 退出异常。
+        temp_stack = AsyncExitStack()
+        try:
+            read_stream, write_stream, _ = await temp_stack.enter_async_context(
+                streamable_http_client(config.endpoint_url)
             )
-        )
-        await session.initialize()
+            session = await temp_stack.enter_async_context(
+                _AichanClientSession(
+                    read_stream,
+                    write_stream,
+                )
+            )
+            self._register_wakeup_notification_handler(
+                session=session,
+                server_name=config.name,
+            )
+            await session.initialize()
+        except BaseException as exc:
+            try:
+                await temp_stack.aclose()
+            except BaseException as close_exc:
+                # 兼容 mcp streamable_http_client 在连接失败路径上的已知关闭异常，
+                # 避免污染主错误栈。
+                logger.debug(
+                    "♻️ [MCPHub] 忽略连接失败后的清理异常，url='{}'，error='{}: {}'",
+                    config.endpoint_url,
+                    close_exc.__class__.__name__,
+                    close_exc,
+                )
+            if isinstance(exc, KeyboardInterrupt | SystemExit):
+                raise
+            raise RuntimeError(
+                f"MCP 会话初始化失败：url='{config.endpoint_url}'"
+            ) from exc
+
+        persisted_stack = temp_stack.pop_all()
+        self._exit_stack.push_async_callback(persisted_stack.aclose)
         return session
 
-    def _build_session_message_handler(self, server_name: str):
-        async def _message_handler(
-            message: RequestResponder[mcp_types.ServerRequest, mcp_types.ClientResult]
-            | mcp_types.ServerNotification
-            | Exception,
-        ) -> None:
-            if isinstance(message, Exception):
-                logger.warning(
-                    "⚠️ [MCPHub] 收到服务异常消息，server='{}'，error='{}: {}'",
-                    server_name,
-                    message.__class__.__name__,
-                    message,
-                )
-                return
+    def _register_wakeup_notification_handler(
+        self,
+        *,
+        session: _AichanClientSession,
+        server_name: str,
+    ) -> None:
+        on_notification = getattr(session, "on_notification", None)
+        if on_notification is None or not callable(on_notification):
+            raise RuntimeError(
+                f"MCP 服务 '{server_name}' 的会话不支持 on_notification，无法监听 {AICHAN_WAKEUP_METHOD}"
+            )
 
-            if isinstance(message, mcp_types.ServerNotification):
-                await self._handle_server_notification(
-                    server_name=server_name,
-                    notification=message,
-                )
+        @on_notification(AICHAN_WAKEUP_METHOD)
+        async def _on_wakeup_notification(*args: Any, **kwargs: Any) -> None:
+            params = self._coerce_notification_params(*args, **kwargs)
+            await self._handle_wakeup_notification(
+                server_name=server_name,
+                params=params,
+            )
 
-        return _message_handler
+    @staticmethod
+    def _coerce_notification_params(*args: Any, **kwargs: Any) -> dict[str, Any] | None:
+        """
+        兼容不同 SDK 版本的通知回调入参形态。
 
-    async def _handle_server_notification(
+        允许以下形态：
+        - callback(params: dict | None)
+        - callback(notification_obj)，且对象含 `.params`
+        - callback(..., params=...)
+        """
+        if "params" in kwargs:
+            return _to_dict_or_none(kwargs["params"])
+
+        if not args:
+            return None
+
+        first = args[0]
+        if isinstance(first, dict):
+            return first
+
+        candidate = getattr(first, "params", None)
+        dumped_candidate = _to_dict_or_none(candidate)
+        if dumped_candidate is not None:
+            return dumped_candidate
+
+        root = getattr(first, "root", None)
+        root_params = getattr(root, "params", None)
+        dumped_root_params = _to_dict_or_none(root_params)
+        if dumped_root_params is not None:
+            return dumped_root_params
+
+        return None
+
+    async def _handle_wakeup_notification(
         self,
         *,
         server_name: str,
-        notification: mcp_types.ServerNotification,
+        params: dict[str, Any] | None,
     ) -> None:
         """
-        处理服务端通知并转发为 WakeUpEvent。
+        处理 `aichan/wakeup` 自定义通知并触发全局唤醒事件。
 
-        当前仅识别：
-        - notifications/progress + progressToken="new_message_alert"
+        契约：只要收到 `aichan/wakeup` 就触发唤醒，不做 channel/reason 过滤判断。
         """
-        root = notification.root
-        if not isinstance(root, mcp_types.ProgressNotification):
-            return
+        normalized_params = params if isinstance(params, dict) else {}
+        channel = str(normalized_params.get("channel") or "unknown").strip() or "unknown"
+        reason = str(normalized_params.get("reason") or "unknown").strip() or "unknown"
 
-        progress_token = root.params.progressToken
-        if progress_token != "new_message_alert":
-            return
-
-        raw_message = root.params.message
-        if not isinstance(raw_message, str) or not raw_message.strip():
-            logger.warning(
-                "⚠️ [MCPHub] 忽略空唤醒通知，server='{}'",
-                server_name,
-            )
-            return
-
-        try:
-            payload = json.loads(raw_message)
-        except json.JSONDecodeError:
-            logger.warning(
-                "⚠️ [MCPHub] 忽略非法唤醒通知（非 JSON），server='{}'，payload='{}'",
-                server_name,
-                raw_message,
-            )
-            return
-
-        if not isinstance(payload, dict):
-            logger.warning(
-                "⚠️ [MCPHub] 忽略非法唤醒通知（非对象），server='{}'",
-                server_name,
-            )
-            return
-
-        event_name = str(payload.get("event", "")).strip()
-        channel = str(payload.get("channel", "")).strip()
-        raw_message_id = payload.get("message_id")
-        if event_name != "new_message_alert" or not channel:
-            logger.warning(
-                "⚠️ [MCPHub] 忽略字段不完整的唤醒通知，server='{}'，payload={}",
-                server_name,
-                payload,
-            )
-            return
-
-        try:
-            message_id = int(raw_message_id)
-        except (TypeError, ValueError):
-            logger.warning(
-                "⚠️ [MCPHub] 忽略非法 message_id，server='{}'，payload={}",
-                server_name,
-                payload,
-            )
-            return
-
-        wake_event = WakeUpEvent.build(
+        signal = WakeupSignal.build(
             server_name=server_name,
-            event=event_name,
             channel=channel,
-            message_id=message_id,
-            raw_payload=payload,
+            reason=reason,
+            raw_params=normalized_params,
         )
-        await self._wakeup_queue.put(wake_event)
+        self._last_wakeup_signal = signal
+        self._wakeup_event.set()
         logger.info(
-            "🔔 [MCPHub] 收到唤醒通知，server='{}'，channel='{}'，message_id={}",
+            "🔔 [MCPHub] 收到唤醒通知，method='{}'，server='{}'，channel='{}'，reason='{}'",
+            AICHAN_WAKEUP_METHOD,
             server_name,
             channel,
-            message_id,
+            reason,
         )
 
     async def _refresh_tools(self) -> None:

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from cli.mcp_server import McpSessionBroadcaster, build_mcp_server_routes
+from cli.mcp_server import (
+    AICHAN_WAKEUP_REASON_NEW_MESSAGE,
+    McpSessionBroadcaster,
+    build_mcp_server_routes,
+)
 from cli.message_store import AsyncChatStore, ChatStore
 from cli.models import ChatMessage, SendMessageRequest
 from cli.settings import CLI_SERVER_CHANNEL_NAME, CLI_SERVER_SSE_WAIT_TIMEOUT_SECONDS
@@ -34,20 +39,30 @@ def build_cli_mcp_app(store: ChatStore | None = None) -> FastAPI:
         else store
     )
     broadcaster = McpSessionBroadcaster()
-    app = FastAPI(title="CLI MCP Server", version="4.0.0")
-
-    # 挂载 MCP 协议路由：/mcp/sse 与 /mcp/messages。
-    app.router.routes.extend(
-        build_mcp_server_routes(
-            store=chat_store,
-            broadcaster=broadcaster,
-        )
+    mcp_routes, session_manager = build_mcp_server_routes(
+        store=chat_store,
+        broadcaster=broadcaster,
     )
+
+    @asynccontextmanager
+    async def app_lifespan(_: FastAPI):
+        async with session_manager.run():
+            await broadcaster.start()
+            try:
+                yield
+            finally:
+                await broadcaster.stop()
+
+    app = FastAPI(title="CLI MCP Server", version="4.0.0", lifespan=app_lifespan)
+    app.state.mcp_session_manager = session_manager
+
+    # 挂载 MCP 协议路由：/mcp（Streamable HTTP）。
+    app.router.routes.extend(mcp_routes)
 
     @app.get("/health")
     async def health() -> dict[str, object]:
         """健康检查端点。"""
-        return {"ok": True, "service": "cli_mcp_server"}
+        return {"ok": True, "service": "cli-mcp-server"}
 
     @app.get("/v1/messages", response_model=list[ChatMessage])
     async def list_messages(
@@ -105,9 +120,9 @@ def build_cli_mcp_app(store: ChatStore | None = None) -> FastAPI:
             )
             logger.info("👤 [UI] 收到人类消息: {}", message.text)
             if message.sender == "user":
-                await broadcaster.broadcast_new_message_alert(
+                broadcaster.enqueue_wakeup(
                     channel=CLI_SERVER_CHANNEL_NAME,
-                    message_id=message.id,
+                    reason=AICHAN_WAKEUP_REASON_NEW_MESSAGE,
                 )
             return message
         except ValueError as exc:

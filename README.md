@@ -1,10 +1,11 @@
 # AIChan
 
-AIChan 当前采用 **MCPHub + WakeUpRuntime** 的动态架构：
+AIChan 当前采用 **MCPHub + AgentRuntime** 的动态架构：
 
 - 大脑通过 `MCPHub` 连接一个或多个 MCP Server，并动态发现可调用工具；
-- 通道 MCP Server 在收到人类消息后仅发送 `new_message_alert` 唤醒通知；
-- 大脑侧 `WakeUpAgentRuntime` 被唤醒后，先调用 `fetch_unread_messages` 拉取未读，再通过 `send_*` 工具动作回复。
+- 通道 MCP Server 在收到人类消息后仅发送 `aichan/wakeup` 自定义唤醒通知；
+- 大脑侧 `AgentRuntime` 被唤醒后，先调用 `fetch_unread_messages` 拉取未读，再通过 `send_*` 工具动作回复。
+- 只要 MCP endpoint 发送 `aichan/wakeup`，Hub 就会触发全局唤醒事件（不做 channel/reason 过滤）。
 
 > 本仓库已完成对旧静态插件模式的硬切换，不保留兼容链路。
 
@@ -16,7 +17,7 @@ AIChan 当前采用 **MCPHub + WakeUpRuntime** 的动态架构：
 2. `aichan/agent`
    - 基于 LangGraph 执行唤醒后的 Tool-as-Action 推理闭环。
 3. `mcp_servers/cli`
-   - CLI MCP Server，提供 `/mcp/sse`（MCP 隧道）与 `/v1/messages`、`/v1/events`（通道 API），并实现 `fetch_unread_messages` + `new_message_alert`。
+   - CLI MCP Server，提供 `/mcp`（Streamable HTTP MCP 端点）与 `/v1/messages`、`/v1/events`（通道 API），并实现 `fetch_unread_messages` + `aichan/wakeup`。
 
 ## 快速开始
 
@@ -38,7 +39,9 @@ uv sync
 
 可选：
 
-- `MCP_SERVER_URLS`（逗号分隔 MCP SSE 地址，默认 `http://localhost:9000/mcp/sse`）
+- `MCP_SERVER_ENDPOINTS`（逗号分隔 MCP Streamable HTTP 端点）
+  - 单端点：`http://localhost:9000/mcp`
+  - 多端点：`http://localhost:9000/mcp,http://localhost:9100/mcp`
 - `CLI_SERVER_HOST` / `CLI_SERVER_PORT`
 
 ### 3. 启动大脑
@@ -62,9 +65,10 @@ uv run --package cli-mcp-server python -m cli.server
   - `GET /v1/messages?after_id=0`
   - `POST /v1/messages`
   - `GET /v1/events?after_id=0`
-- MCP 工具隧道：
-  - `GET /mcp/sse`
-  - `POST /mcp/messages`
+- MCP Streamable HTTP 端点：
+  - `GET /mcp`
+  - `POST /mcp`
+  - `DELETE /mcp`
 
 ## 目录结构
 

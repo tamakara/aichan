@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     "core",
     "langchain-core>=1.2.20",
-    "mcp>=1.26.0",
+    "mcp>=1.27.0",
     "pydantic>=2.12.5",
 ]
 

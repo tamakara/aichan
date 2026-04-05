@@ -1,5 +1,5 @@
 services:
-  cli_mcp_server:
+  cli-mcp-server:
     build:
       context: ./mcp_servers
       dockerfile: cli/Dockerfile
@@ -18,7 +18,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_MODEL_NAME: ${LLM_MODEL_NAME}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE}
-      MCP_SERVER_URLS: http://cli_mcp_server:9000/mcp/sse
+      MCP_SERVER_ENDPOINTS: http://cli-mcp-server:9000/mcp
     ports:
       - "8000:8000"
     restart: unless-stopped

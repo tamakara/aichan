@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 import time
-from typing import Annotated,  Callable, TypedDict
+from typing import Annotated, Callable, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -14,13 +14,13 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from core.logger import logger, render_panel
-from mcp_hub import MCPManager, WakeUpEvent
+from mcp_hub import MCPManager, WakeupSignal
 
 from agent.prompt_templates import TOOL_AS_ACTION_SYSTEM_PROMPT
 
 
 class RuntimeState(TypedDict):
-    """WakeUpAgentRuntime 图状态。"""
+    """AgentRuntime 图状态。"""
 
     messages: Annotated[list[BaseMessage], add_messages]
 
@@ -55,13 +55,13 @@ def _render_full_prompt(messages: list[BaseMessage]) -> str:
     return "\n\n".join(sections)
 
 
-class WakeUpAgentRuntime:
+class AgentRuntime:
     """
     Agent 唤醒执行器（Pull + Tool-as-Action）。
 
     主流程：
-    1. 监听 MCPHub 的 WakeUpEvent；
-    2. 合并短时间内积压事件；
+    1. 挂起等待 MCPHub 全局唤醒事件；
+    2. 唤醒后立即 clear 事件标记；
     3. 运行 LLM + Tool 循环；
     4. 仅把普通文本记录为内心独白，用户可见输出必须来自 send_* 工具副作用。
     """
@@ -80,15 +80,15 @@ class WakeUpAgentRuntime:
     async def start(self) -> None:
         """启动后台唤醒循环。"""
         if self._running:
-            logger.warning("♻️ [WakeUpRuntime] 已在运行，忽略重复启动")
+            logger.warning("♻️ [AgentRuntime] 已在运行，忽略重复启动")
             return
 
         self._running = True
         self._worker_task = asyncio.create_task(
             self._run_loop(),
-            name="wakeup-agent-runtime",
+            name="agent-runtime",
         )
-        logger.info("🟢 [WakeUpRuntime] 唤醒运行时已启动")
+        logger.info("🟢 [AgentRuntime] 唤醒运行时已启动")
 
     async def stop(self) -> None:
         """停止后台唤醒循环。"""
@@ -102,45 +102,44 @@ class WakeUpAgentRuntime:
         try:
             await task
         except asyncio.CancelledError:
-            logger.info("🛑 [WakeUpRuntime] 唤醒运行时已停止")
+            logger.info("🛑 [AgentRuntime] 唤醒运行时已停止")
 
     async def _run_loop(self) -> None:
         while self._running:
             try:
-                first_event = await self._mcp_manager.wait_wakeup_event(timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
+                await self._mcp_manager.wait_for_wakeup()
+                self._mcp_manager.clear_wakeup_event()
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
                 logger.error(
-                    "❌ [WakeUpRuntime] 等待唤醒事件失败: {}: {}",
+                    "❌ [AgentRuntime] 等待唤醒事件失败: {}: {}",
                     exc.__class__.__name__,
                     exc,
                 )
                 await asyncio.sleep(0.2)
                 continue
 
-            coalesced_events = [first_event, *self._mcp_manager.drain_pending_wakeup_events()]
             try:
-                await self._run_single_cycle(events=coalesced_events)
+                await self._run_single_cycle()
             except Exception as exc:
                 logger.error(
-                    "❌ [WakeUpRuntime] 处理唤醒批次失败: {}: {}",
+                    "❌ [AgentRuntime] 处理唤醒循环失败: {}: {}",
                     exc.__class__.__name__,
                     exc,
                 )
 
-    async def _run_single_cycle(self, events: list[WakeUpEvent]) -> None:
+    async def _run_single_cycle(self) -> None:
         """执行一次唤醒推理循环。"""
-        if not events:
-            return
-
         tools = await self._mcp_manager.get_all_tools(refresh=False)
         if not tools:
-            logger.warning("⚠️ [WakeUpRuntime] 当前无可用工具，跳过本轮唤醒")
+            logger.warning("⚠️ [AgentRuntime] 当前无可用工具，跳过本轮唤醒")
             return
 
         graph = self._build_graph(tools=tools)
-        prompt_messages = self._build_context_messages(events=events)
+        prompt_messages = self._build_context_messages(
+            wakeup_signal=self._mcp_manager.get_last_wakeup_signal()
+        )
         started_at = time.perf_counter()
 
         final_state: dict[str, list[BaseMessage]] | None = None
@@ -155,7 +154,7 @@ class WakeUpAgentRuntime:
         first_tool_call_names = self._first_tool_call_names(all_messages)
         if not self._is_first_step_fetch(first_tool_call_names):
             logger.warning(
-                "⚠️ [WakeUpRuntime] 首次工具调用未满足 fetch_unread_messages 约束，calls={}",
+                "⚠️ [AgentRuntime] 首次工具调用未满足 fetch_unread_messages 约束，calls={}",
                 first_tool_call_names,
             )
 
@@ -163,14 +162,14 @@ class WakeUpAgentRuntime:
         if not send_tool_names:
             monologue = self._extract_inner_monologue(all_messages)
             logger.info(
-                "🧠 [WakeUpRuntime] 本轮无 send_* 工具调用，仅记录内心独白。耗时={}ms\n{}",
+                "🧠 [AgentRuntime] 本轮无 send_* 工具调用，仅记录内心独白。耗时={}ms\n{}",
                 elapsed_ms,
                 render_panel(monologue),
             )
             return
 
         logger.info(
-            "✅ [WakeUpRuntime] 本轮完成，send 工具调用数={}，工具={}，耗时={}ms",
+            "✅ [AgentRuntime] 本轮完成，send 工具调用数={}，工具={}，耗时={}ms",
             len(send_tool_names),
             ", ".join(send_tool_names),
             elapsed_ms,
@@ -183,7 +182,7 @@ class WakeUpAgentRuntime:
 
         async def reason_node(state: RuntimeState):
             logger.info(
-                "🧾 [WakeUpRuntime] LLM 输入:\n{}",
+                "🧾 [AgentRuntime] LLM 输入:\n{}",
                 render_panel(_render_full_prompt(state["messages"])),
             )
             response = await llm_with_tools.ainvoke(state["messages"])
@@ -192,7 +191,7 @@ class WakeUpAgentRuntime:
                     str(item.get("name", "<unknown_tool>"))
                     for item in response.tool_calls
                 ]
-                logger.info("🛠 [WakeUpRuntime] LLM 请求工具: {}", ", ".join(called_tools))
+                logger.info("🛠 [AgentRuntime] LLM 请求工具: {}", ", ".join(called_tools))
             return {"messages": [response]}
 
         def route(state: RuntimeState):
@@ -209,19 +208,20 @@ class WakeUpAgentRuntime:
         return workflow.compile()
 
     @staticmethod
-    def _build_context_messages(events: list[WakeUpEvent]) -> list[BaseMessage]:
+    def _build_context_messages(
+        wakeup_signal: WakeupSignal | None,
+    ) -> list[BaseMessage]:
         payload = {
-            "wakeup_batch_size": len(events),
-            "wakeup_events": [
+            "wakeup_signal": (
                 {
-                    "server_name": event.server_name,
-                    "event": event.event,
-                    "channel": event.channel,
-                    "message_id": event.message_id,
-                    "received_at": event.received_at,
+                    "server_name": wakeup_signal.server_name,
+                    "channel": wakeup_signal.channel,
+                    "reason": wakeup_signal.reason,
+                    "received_at": wakeup_signal.received_at,
                 }
-                for event in events
-            ],
+                if wakeup_signal is not None
+                else None
+            ),
             "execution_note": (
                 "你已被外部消息唤醒。请严格遵守系统规则，"
                 "先调用所有 fetch_unread_messages 工具；如需上下文可再调用 fetch_message_history。"

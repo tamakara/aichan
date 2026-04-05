@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
@@ -10,7 +11,7 @@ from fastapi import FastAPI
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
-from agent import WakeUpAgentRuntime
+from agent import AgentRuntime
 from core.config import settings
 from core.logger import logger
 from mcp_hub import MCPManager, MCPServerConfig
@@ -28,23 +29,22 @@ def build_llm_client() -> BaseChatModel:
     )
 
 
-def build_mcp_server_configs(raw_urls: list[str]) -> list[MCPServerConfig]:
+def build_mcp_server_configs(raw_endpoints: str) -> list[MCPServerConfig]:
     """
-    将环境变量中的 MCP URL 列表解析为标准配置。
+    将环境变量中的 MCP 端点列表解析为标准配置。
 
     约定：
-    - 允许多个 URL；
+    - 逗号分隔多个端点 URL；
     - 自动生成稳定服务别名；
+    - 唤醒行为由 MCP 自定义通知驱动，不再依赖 URL 查询参数过滤；
     - 当前版本默认全部视为强依赖服务。
     """
-    parsed_urls = [item.strip() for item in raw_urls if item and item.strip()]
-    if not parsed_urls:
-        parsed_urls = ["http://localhost:9000/mcp/sse"]
-
+    parsed_endpoints = [item.strip() for item in raw_endpoints.split(",") if item.strip()]
     configs: list[MCPServerConfig] = []
     used_aliases: set[str] = set()
-    for index, url in enumerate(parsed_urls, start=1):
-        parsed = urlparse(url)
+    for index, endpoint_url in enumerate(parsed_endpoints, start=1):
+        clean_url = endpoint_url
+        parsed = urlparse(clean_url)
         raw_alias = parsed.netloc or f"mcp_{index}"
         alias = re.sub(r"[^A-Za-z0-9_]+", "_", raw_alias).strip("_").lower()
         if not alias:
@@ -59,7 +59,7 @@ def build_mcp_server_configs(raw_urls: list[str]) -> list[MCPServerConfig]:
         configs.append(
             MCPServerConfig(
                 name=alias,
-                sse_url=url,
+                endpoint_url=clean_url,
                 required=True,
             )
         )
@@ -73,36 +73,50 @@ async def app_lifespan(app: FastAPI):
 
     启动阶段：
     1. 初始化 MCPManager；
-    2. 启动 WakeUpAgentRuntime。
+    2. 启动 AgentRuntime。
 
     关闭阶段：
-    1. 停止 WakeUpAgentRuntime；
+    1. 停止 AgentRuntime；
     2. 停止 MCPManager。
     """
     logger.info("🚀 [Main] AICHAN 大脑生命周期启动中（Pull + Tool-as-Action）")
 
-    server_configs = build_mcp_server_configs(settings.mcp_server_urls)
+    server_configs = build_mcp_server_configs(settings.mcp_server_endpoints)
     mcp_manager = MCPManager(
         server_configs=server_configs,
     )
-    await mcp_manager.start()
+    retry_seconds = max(0.2, float(settings.mcp_connect_retry_seconds))
+    while True:
+        try:
+            await mcp_manager.start()
+            break
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "⚠️ [Main] MCPHub 连接失败，将在 {:.1f}s 后重试，error='{}: {}'",
+                retry_seconds,
+                exc.__class__.__name__,
+                exc,
+            )
+            await asyncio.sleep(retry_seconds)
 
-    wakeup_runtime = WakeUpAgentRuntime(
+    agent_runtime = AgentRuntime(
         llm_factory=build_llm_client,
         mcp_manager=mcp_manager,
     )
-    await wakeup_runtime.start()
+    await agent_runtime.start()
 
     app.state.mcp_manager = mcp_manager
-    app.state.wakeup_runtime = wakeup_runtime
+    app.state.agent_runtime = agent_runtime
 
     try:
         yield
     finally:
-        logger.info("🛑 [Main] AICHAN 大脑生命周期关闭中")
-        await wakeup_runtime.stop()
+        logger.info("🛑 [Main] AICHAN 生命周期关闭中")
+        await agent_runtime.stop()
         await mcp_manager.stop()
-        logger.info("✅ [Main] AICHAN 大脑已停止")
+        logger.info("✅ [Main] AICHAN 已停止")
 
 
 def create_app() -> FastAPI:
@@ -123,18 +137,21 @@ def create_app() -> FastAPI:
         mcp_manager: MCPManager | None = getattr(app.state, "mcp_manager", None)
         mcp_tool_count = 0
         mcp_server_count = 0
-        wakeup_queue_size = 0
+        wakeup_event_is_set = False
+        last_wakeup: dict[str, Any] | None = None
         if mcp_manager is not None:
             mcp_server_count = mcp_manager.get_connected_server_count()
             mcp_tool_count = len(await mcp_manager.get_all_tools(refresh=False))
-            wakeup_queue_size = mcp_manager.get_wakeup_queue().qsize()
+            wakeup_event_is_set = mcp_manager.get_wakeup_event().is_set()
+            last_wakeup = mcp_manager.get_last_wakeup_snapshot()
 
         return {
             "ok": True,
             "service": "aichan_brain",
             "mcp_server_count": mcp_server_count,
             "mcp_tool_count": mcp_tool_count,
-            "wakeup_queue_size": wakeup_queue_size,
+            "wakeup_event_is_set": wakeup_event_is_set,
+            "last_wakeup": last_wakeup,
         }
 
     return app

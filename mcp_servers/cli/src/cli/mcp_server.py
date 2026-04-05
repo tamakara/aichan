@@ -8,22 +8,24 @@ import mcp.types as types
 from loguru import logger
 from mcp.server import Server
 from mcp.server.session import ServerSession
-from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.routing import Route
 
 from cli.message_store import ChatStore
 
 """
-MCP 服务定义与 SSE 接入端点。
+MCP 服务定义与 Streamable HTTP 接入端点。
 
 职责边界：
-1. 仅处理 MCP 协议相关逻辑（工具声明、工具调用、SSE 传输）；
+1. 仅处理 MCP 协议相关逻辑（工具声明、工具调用、Streamable HTTP 传输）；
 2. 通过 `ChatStore` 协议与消息存储交互，不依赖具体存储实现。
 """
 
 FETCH_MESSAGE_HISTORY_DEFAULT_PAGE = 1
 FETCH_MESSAGE_HISTORY_DEFAULT_PAGE_SIZE = 50
 FETCH_MESSAGE_HISTORY_MAX_PAGE_SIZE = 200
+AICHAN_WAKEUP_METHOD = "aichan/wakeup"
+AICHAN_WAKEUP_REASON_NEW_MESSAGE = "new_message"
 
 
 def _read_int_argument(
@@ -54,12 +56,36 @@ class McpSessionBroadcaster:
     """
     MCP 会话广播器。
 
-    用于维护活跃会话并向客户端推送 `new_message_alert` 通知。
+    用于维护活跃会话并异步推送 `aichan/wakeup` 自定义通知。
     """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._sessions: set[ServerSession] = set()
+        self._wakeup_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
+        self._worker_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """启动后台通知分发任务。"""
+        if self._worker_task is not None and not self._worker_task.done():
+            logger.warning("♻️ [MCP] 会话广播器已启动，忽略重复调用")
+            return
+        self._worker_task = asyncio.create_task(
+            self._wakeup_worker_loop(),
+            name="cli-mcp-wakeup-broadcaster",
+        )
+
+    async def stop(self) -> None:
+        """停止后台通知分发任务。"""
+        task = self._worker_task
+        self._worker_task = None
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("🛑 [MCP] 会话广播器已停止")
 
     async def register(self, session: ServerSession) -> None:
         """注册活跃会话（幂等）。"""
@@ -84,15 +110,50 @@ class McpSessionBroadcaster:
             return
         await self.register(context.session)
 
-    async def broadcast_new_message_alert(self, channel: str, message_id: int) -> None:
-        """向全部活跃会话广播新消息唤醒通知。"""
-        payload = json.dumps(
+    def enqueue_wakeup(self, *, channel: str, reason: str) -> None:
+        """非阻塞入队一条唤醒信号。"""
+        clean_channel = channel.strip()
+        clean_reason = reason.strip()
+        if not clean_channel or not clean_reason:
+            logger.warning(
+                "⚠️ [MCP] 忽略无效唤醒信号，channel='{}'，reason='{}'",
+                channel,
+                reason,
+            )
+            return
+        self._wakeup_queue.put_nowait(
             {
-                "event": "new_message_alert",
+                "channel": clean_channel,
+                "reason": clean_reason,
+            }
+        )
+
+    async def _wakeup_worker_loop(self) -> None:
+        """后台消费唤醒队列并广播 MCP 自定义通知。"""
+        while True:
+            payload = await self._wakeup_queue.get()
+            try:
+                await self._broadcast_wakeup(
+                    channel=payload["channel"],
+                    reason=payload["reason"],
+                )
+            except Exception as exc:
+                logger.error(
+                    "❌ [MCP] 广播唤醒通知失败: {}: {}",
+                    exc.__class__.__name__,
+                    exc,
+                )
+            finally:
+                self._wakeup_queue.task_done()
+
+    async def _broadcast_wakeup(self, *, channel: str, reason: str) -> None:
+        """向全部活跃会话广播 `aichan/wakeup` 自定义通知。"""
+        notification = types.Notification[dict[str, str], str](
+            method=AICHAN_WAKEUP_METHOD,
+            params={
                 "channel": channel,
-                "message_id": message_id,
+                "reason": reason,
             },
-            ensure_ascii=False,
         )
 
         async with self._lock:
@@ -101,17 +162,20 @@ class McpSessionBroadcaster:
         failed_sessions: list[ServerSession] = []
         for session in sessions_snapshot:
             try:
-                await session.send_progress_notification(
-                    progress_token="new_message_alert",
-                    progress=1.0,
-                    message=payload,
-                )
+                await session.send_notification(notification)
             except Exception as exc:
                 failed_sessions.append(session)
                 logger.warning(
                     "⚠️ [MCP] 广播唤醒通知失败，已标记会话待移除: {}: {}",
                     exc.__class__.__name__,
                     exc,
+                )
+            else:
+                logger.info(
+                    "🔔 [MCP] 已发送唤醒通知，method='{}'，channel='{}'，reason='{}'",
+                    AICHAN_WAKEUP_METHOD,
+                    channel,
+                    reason,
                 )
 
         if failed_sessions:
@@ -274,48 +338,32 @@ def build_mcp_server(store: ChatStore, broadcaster: McpSessionBroadcaster) -> Se
     return mcp_server
 
 
-class McpSseEndpoint:
+class McpStreamableHttpEndpoint:
     """
-    MCP SSE 接入端点（原生 ASGI 形式）。
-
-    关键点：
-    - 不走 FastAPI 的 request->response 封装；
-    - 由 `SseServerTransport` 全权负责响应发送，避免重复发送 `http.response.start`。
+    MCP Streamable HTTP 接入端点（原生 ASGI 形式）。
     """
 
-    def __init__(self, mcp_server: Server, sse_transport: SseServerTransport) -> None:
-        self._mcp_server = mcp_server
-        self._sse_transport = sse_transport
+    def __init__(self, session_manager: StreamableHTTPSessionManager) -> None:
+        self._session_manager = session_manager
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        logger.info("🔌 [MCP] 大脑已连接到 MCP SSE 隧道")
-        async with self._sse_transport.connect_sse(scope, receive, send) as streams:
-            await self._mcp_server.run(
-                streams[0],
-                streams[1],
-                self._mcp_server.create_initialization_options(),
-            )
-
-
-class McpMessagesEndpoint:
-    """MCP 消息上行端点（原生 ASGI 形式）。"""
-
-    def __init__(self, sse_transport: SseServerTransport) -> None:
-        self._sse_transport = sse_transport
-
-    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        await self._sse_transport.handle_post_message(scope, receive, send)
+        await self._session_manager.handle_request(scope, receive, send)
 
 
 def build_mcp_server_routes(
     store: ChatStore,
     broadcaster: McpSessionBroadcaster,
-) -> list[Route]:
-    """构建 MCP 相关路由集合。"""
+) -> tuple[list[Route], StreamableHTTPSessionManager]:
+    """构建 MCP Streamable HTTP 路由与会话管理器。"""
     mcp_server = build_mcp_server(store=store, broadcaster=broadcaster)
-    # MCP SSE 传输层要求约定一个 POST 上行地址。
-    sse_transport = SseServerTransport("/mcp/messages")
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        stateless=False,
+    )
     return [
-        Route("/mcp/sse", endpoint=McpSseEndpoint(mcp_server, sse_transport), methods=["GET"]),
-        Route("/mcp/messages", endpoint=McpMessagesEndpoint(sse_transport), methods=["POST"]),
-    ]
+        Route(
+            "/mcp",
+            endpoint=McpStreamableHttpEndpoint(session_manager),
+            methods=["GET", "POST", "DELETE"],
+        )
+    ], session_manager
