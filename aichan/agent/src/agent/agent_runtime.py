@@ -1,58 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
-import time
-from typing import Annotated, Callable, TypedDict
+from collections.abc import Callable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_core.tools import BaseTool
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 
-from core.logger import logger, render_panel
-from mcp_hub import MCPManager, WakeupSignal
+from core.logger import logger
+from mcp_hub import MCPManager
 
-from agent.prompt_templates import TOOL_AS_ACTION_SYSTEM_PROMPT
-
-
-class RuntimeState(TypedDict):
-    """AgentRuntime 图状态。"""
-
-    messages: Annotated[list[BaseMessage], add_messages]
-
-
-def _serialize_message_content(content: object) -> str:
-    """将消息内容稳定序列化为日志文本。"""
-    if isinstance(content, str):
-        return content
-
-    try:
-        return json.dumps(content, ensure_ascii=False, indent=2)
-    except TypeError:
-        return repr(content)
-
-
-def _render_full_prompt(messages: list[BaseMessage]) -> str:
-    """渲染完整模型输入，便于追踪 Tool-as-Action 执行链。"""
-    sections: list[str] = []
-    for index, message in enumerate(messages, start=1):
-        header = f"[{index}] role={message.type}"
-        if message.id:
-            header = f"{header} id={message.id}"
-
-        section = f"{header}\n{_serialize_message_content(message.content)}"
-        if isinstance(message, AIMessage) and message.tool_calls:
-            section = (
-                f"{section}\n\n[tool_calls]\n"
-                f"{json.dumps(message.tool_calls, ensure_ascii=False, indent=2)}"
-            )
-        sections.append(section)
-
-    return "\n\n".join(sections)
+from .runtime_cycle import RuntimeCycleRunner
+from .runtime_graph import ReasoningGraphRunner
+from .runtime_loop import RuntimeLoopRunner
+from .runtime_rules import RuntimeRulesAuditor
 
 
 class AgentRuntime:
@@ -72,10 +31,30 @@ class AgentRuntime:
         llm_factory: Callable[[], BaseChatModel],
         mcp_manager: MCPManager,
     ) -> None:
-        self._llm_factory = llm_factory
-        self._mcp_manager = mcp_manager
+        # 后台工作任务句柄；运行中为 asyncio.Task，停止后为 None。
         self._worker_task: asyncio.Task[None] | None = None
+
+        # 运行状态位，控制主循环是否继续消费唤醒事件。
         self._running = False
+
+        # 图执行器：负责 reason/tools 图的构建与执行。
+        graph_runner = ReasoningGraphRunner(llm_factory=llm_factory)
+
+        # 规则审计器：负责首步 fetch 与 send 工具规则校验。
+        rules_auditor = RuntimeRulesAuditor()
+
+        # 单轮执行器：把“拉工具 -> 跑图 -> 审计 -> 记录结果”封装为一个动作。
+        cycle_runner = RuntimeCycleRunner(
+            mcp_manager=mcp_manager,
+            graph_runner=graph_runner,
+            rules_auditor=rules_auditor,
+        )
+
+        # 循环调度器：负责“等待唤醒 -> 执行单轮 -> 异常隔离”。
+        self._loop_runner = RuntimeLoopRunner(
+            mcp_manager=mcp_manager,
+            cycle_runner=cycle_runner,
+        )
 
     async def start(self) -> None:
         """启动后台唤醒循环。"""
@@ -83,6 +62,7 @@ class AgentRuntime:
             logger.warning("♻️ [AgentRuntime] 已在运行，忽略重复启动")
             return
 
+        # 先置位运行状态，再创建后台循环任务。
         self._running = True
         self._worker_task = asyncio.create_task(
             self._run_loop(),
@@ -93,11 +73,14 @@ class AgentRuntime:
     async def stop(self) -> None:
         """停止后台唤醒循环。"""
         task = self._worker_task
+
+        # 先关闭运行标志，阻止新循环继续执行。
         self._running = False
         self._worker_task = None
         if task is None:
             return
 
+        # 主动取消后台任务并等待其退出。
         task.cancel()
         try:
             await task
@@ -105,178 +88,9 @@ class AgentRuntime:
             logger.info("🛑 [AgentRuntime] 唤醒运行时已停止")
 
     async def _run_loop(self) -> None:
-        while self._running:
-            try:
-                await self._mcp_manager.wait_for_wakeup()
-                self._mcp_manager.clear_wakeup_event()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error(
-                    "❌ [AgentRuntime] 等待唤醒事件失败: {}: {}",
-                    exc.__class__.__name__,
-                    exc,
-                )
-                await asyncio.sleep(0.2)
-                continue
+        """委托循环调度器执行主循环。"""
+        await self._loop_runner.run(is_running=self._is_running)
 
-            try:
-                await self._run_single_cycle()
-            except Exception as exc:
-                logger.error(
-                    "❌ [AgentRuntime] 处理唤醒循环失败: {}: {}",
-                    exc.__class__.__name__,
-                    exc,
-                )
-
-    async def _run_single_cycle(self) -> None:
-        """执行一次唤醒推理循环。"""
-        tools = await self._mcp_manager.get_all_tools(refresh=False)
-        if not tools:
-            logger.warning("⚠️ [AgentRuntime] 当前无可用工具，跳过本轮唤醒")
-            return
-
-        graph = self._build_graph(tools=tools)
-        prompt_messages = self._build_context_messages(
-            wakeup_signal=self._mcp_manager.get_last_wakeup_signal()
-        )
-        started_at = time.perf_counter()
-
-        final_state: dict[str, list[BaseMessage]] | None = None
-        async for state in graph.astream({"messages": prompt_messages}, stream_mode="values"):
-            final_state = state
-
-        if final_state is None:
-            raise RuntimeError("推理流程未产出任何状态")
-
-        all_messages = final_state["messages"]
-        send_tool_names = self._collect_send_tool_calls(all_messages)
-        first_tool_call_names = self._first_tool_call_names(all_messages)
-        if not self._is_first_step_fetch(first_tool_call_names):
-            logger.warning(
-                "⚠️ [AgentRuntime] 首次工具调用未满足 fetch_unread_messages 约束，calls={}",
-                first_tool_call_names,
-            )
-
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        if not send_tool_names:
-            monologue = self._extract_inner_monologue(all_messages)
-            logger.info(
-                "🧠 [AgentRuntime] 本轮无 send 工具调用，仅记录内心独白。耗时={}ms\n{}",
-                elapsed_ms,
-                render_panel(monologue),
-            )
-            return
-
-        logger.info(
-            "✅ [AgentRuntime] 本轮完成，send 工具调用数={}，工具={}，耗时={}ms",
-            len(send_tool_names),
-            ", ".join(send_tool_names),
-            elapsed_ms,
-        )
-
-    def _build_graph(self, tools: list[BaseTool]):
-        llm = self._llm_factory()
-        llm_with_tools = llm.bind_tools(tools) if tools else llm
-        workflow = StateGraph(RuntimeState)
-
-        async def reason_node(state: RuntimeState):
-            logger.info(
-                "🧾 [AgentRuntime] LLM 输入:\n{}",
-                render_panel(_render_full_prompt(state["messages"])),
-            )
-            response = await llm_with_tools.ainvoke(state["messages"])
-            if isinstance(response, AIMessage) and response.tool_calls:
-                called_tools = [
-                    str(item.get("name", "<unknown_tool>"))
-                    for item in response.tool_calls
-                ]
-                logger.info("🛠 [AgentRuntime] LLM 请求工具: {}", ", ".join(called_tools))
-            return {"messages": [response]}
-
-        def route(state: RuntimeState):
-            last_message = state["messages"][-1]
-            if isinstance(last_message, AIMessage) and last_message.tool_calls:
-                return "tools"
-            return END
-
-        workflow.add_node("reason", reason_node)
-        workflow.set_entry_point("reason")
-        workflow.add_conditional_edges("reason", route)
-        workflow.add_node("tools", ToolNode(tools))
-        workflow.add_edge("tools", "reason")
-        return workflow.compile()
-
-    @staticmethod
-    def _build_context_messages(
-        wakeup_signal: WakeupSignal | None,
-    ) -> list[BaseMessage]:
-        payload = {
-            "wakeup_signal": (
-                {
-                    "server_name": wakeup_signal.server_name,
-                    "channel": wakeup_signal.channel,
-                    "reason": wakeup_signal.reason,
-                    "received_at": wakeup_signal.received_at,
-                }
-                if wakeup_signal is not None
-                else None
-            ),
-            "execution_note": (
-                "你已被外部消息唤醒。请严格遵守系统规则，"
-                "先调用所有 fetch_unread_messages 工具；如需上下文可再调用 fetch_message_history。"
-            ),
-        }
-        return [
-            SystemMessage(content=TOOL_AS_ACTION_SYSTEM_PROMPT),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False, indent=2)),
-        ]
-
-    @staticmethod
-    def _collect_send_tool_calls(messages: list[BaseMessage]) -> list[str]:
-        """提取所有 send_message / send_{channel}_message 工具调用名。"""
-        send_tools: list[str] = []
-        server_tool_pattern = re.compile(r".*__send(?:_[A-Za-z0-9_]+)?_message$")
-        plain_tool_pattern = re.compile(r"^send(?:_[A-Za-z0-9_]+)?_message$")
-        for message in messages:
-            if not isinstance(message, AIMessage):
-                continue
-            for tool_call in message.tool_calls:
-                tool_name = str(tool_call.get("name", "")).strip()
-                if server_tool_pattern.match(tool_name) or plain_tool_pattern.match(tool_name):
-                    send_tools.append(tool_name)
-        return send_tools
-
-    @staticmethod
-    def _first_tool_call_names(messages: list[BaseMessage]) -> list[str]:
-        """获取第一条带工具调用 AI 消息中的全部工具名。"""
-        for message in messages:
-            if not isinstance(message, AIMessage):
-                continue
-            if not message.tool_calls:
-                continue
-            return [str(tool.get("name", "")).strip() for tool in message.tool_calls]
-        return []
-
-    @staticmethod
-    def _is_first_step_fetch(first_tool_call_names: list[str]) -> bool:
-        if not first_tool_call_names:
-            return False
-        for name in first_tool_call_names:
-            if name.endswith("__fetch_unread_messages"):
-                return True
-        return False
-
-    @staticmethod
-    def _extract_inner_monologue(messages: list[BaseMessage]) -> str:
-        """提取最终 AI 文本输出作为内心独白。"""
-        for message in reversed(messages):
-            if not isinstance(message, AIMessage):
-                continue
-            if message.tool_calls:
-                continue
-            content = message.content
-            if isinstance(content, str) and content.strip():
-                return content.strip()
-            return _serialize_message_content(content)
-        return "[empty inner monologue]"
+    def _is_running(self) -> bool:
+        """提供给调度器的运行状态读取回调。"""
+        return self._running

@@ -60,7 +60,6 @@ def build_mcp_server_configs(raw_endpoints: str) -> list[MCPServerConfig]:
             MCPServerConfig(
                 name=alias,
                 endpoint_url=clean_url,
-                required=True,
             )
         )
     return configs
@@ -79,7 +78,7 @@ async def app_lifespan(app: FastAPI):
     1. 停止 AgentRuntime；
     2. 停止 MCPManager。
     """
-    logger.info("🚀 [Main] AICHAN 大脑生命周期启动中（Pull + Tool-as-Action）")
+    logger.info("🚀 [Main] AICHAN 生命周期启动中...")
 
     server_configs = build_mcp_server_configs(settings.mcp_server_endpoints)
     mcp_manager = MCPManager(

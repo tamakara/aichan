@@ -13,12 +13,10 @@ class MCPServerConfig:
     字段说明：
     - name: 服务别名，用于工具名前缀与日志定位。
     - endpoint_url: MCP Streamable HTTP 端点地址。
-    - required: 是否为强依赖。强依赖连接失败会中断启动。
     """
 
     name: str
     endpoint_url: str
-    required: bool = True
 
     def __post_init__(self) -> None:
         clean_name = self.name.strip()
