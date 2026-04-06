@@ -54,7 +54,7 @@ class AgentRuntime:
         # 图执行器：负责 reason/tools 图的构建与执行。
         graph_runner = ReasoningGraphRunner(llm_factory=self._build_llm_client)
 
-        # 规则审计器：负责首步 fetch 与 send 工具规则校验。
+        # 运行时轨迹提取器：负责工具调用与内心独白提取。
         rules_auditor = RuntimeRulesAuditor()
 
         # 单轮执行器：把“拉工具 -> 跑图 -> 审计 -> 记录结果”封装为一个动作。
