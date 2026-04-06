@@ -1,3 +1,12 @@
+"""
+项目配置读取模块。
+
+设计目标：
+1. 统一从环境变量加载配置，避免散落读取；
+2. 使用 pydantic-settings 做类型校验与默认值管理；
+3. 通过模块级 `settings` 单例供全局复用。
+"""
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

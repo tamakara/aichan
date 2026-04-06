@@ -1,3 +1,11 @@
+"""
+MCP Hub 领域模型定义。
+
+包含两类核心数据结构：
+1. `MCPServerConfig`：连接层输入配置；
+2. `WakeupSignal`：通知层输出的统一唤醒信号。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,12 @@
+"""
+项目级日志与终端渲染工具。
+
+该模块统一封装：
+1. Loguru 日志输出格式；
+2. Rich Panel 文本渲染；
+3. 对外暴露统一 logger，避免各模块重复配置。
+"""
+
 from io import StringIO
 import shutil
 import sys
@@ -20,6 +29,7 @@ logger.add(
 
 def render_panel(text: str, title: str = "LLM Prompt") -> str:
     """使用 Rich Panel 渲染带圆角边框的日志文本。"""
+    # 面板宽度跟随终端变化，最小宽度 60 防止内容挤压。
     terminal_width = shutil.get_terminal_size(fallback=(120, 20)).columns
     panel_width = max(60, terminal_width - 2)
 

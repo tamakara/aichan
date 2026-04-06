@@ -1,3 +1,13 @@
+"""
+AIChan 终端客户端入口。
+
+模块职责：
+1. 维护终端输入输出与富文本展示；
+2. 通过 HTTP 与 CLI Gateway 进行消息收发；
+3. 通过 SSE 在后台持续拉取并展示增量消息；
+4. 负责本地消息状态去重与断点续传游标维护。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -296,6 +306,7 @@ def start_sse_worker(
 # 🚀 应用程序入口
 # ==========================================
 def parse_args() -> argparse.Namespace:
+    """解析命令行参数，提供连接/重连/超时等运行时可调项。"""
     parser = argparse.ArgumentParser(description="AIChan CLI 客户端")
     parser.add_argument(
         "--connect-retry-delay", type=float, default=DEFAULT_CONNECT_RETRY_DELAY
@@ -309,6 +320,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    客户端主流程入口。
+
+    执行顺序：
+    1. 读取用户输入的网关地址；
+    2. 检查并等待网关可用；
+    3. 同步历史消息；
+    4. 启动 SSE 后台线程并进入交互循环；
+    5. 退出时优雅回收后台线程。
+    """
     args = parse_args()
     ui = TerminalUI()
 

@@ -1,3 +1,13 @@
+"""
+AICHAN Brain 服务主入口。
+
+模块职责：
+1. 读取配置并构建 LLM 客户端；
+2. 解析 MCP 端点并启动 MCP 管理器；
+3. 装配 AgentRuntime，建立唤醒驱动的推理循环；
+4. 暴露 FastAPI 健康检查与服务生命周期。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -39,12 +49,16 @@ def build_mcp_server_configs(raw_endpoints: str) -> list[MCPServerConfig]:
     - 唤醒行为由 MCP 自定义通知驱动，不再依赖 URL 查询参数过滤；
     - 当前版本默认全部视为强依赖服务。
     """
-    parsed_endpoints = [item.strip() for item in raw_endpoints.split(",") if item.strip()]
+    # 先将逗号分隔输入清洗为“非空 URL 列表”。
+    parsed_endpoints = [
+        item.strip() for item in raw_endpoints.split(",") if item.strip()
+    ]
     configs: list[MCPServerConfig] = []
     used_aliases: set[str] = set()
     for index, endpoint_url in enumerate(parsed_endpoints, start=1):
         clean_url = endpoint_url
         parsed = urlparse(clean_url)
+        # 以域名为主生成服务别名，缺失时回退到顺序别名。
         raw_alias = parsed.netloc or f"mcp_{index}"
         alias = re.sub(r"[^A-Za-z0-9_]+", "_", raw_alias).strip("_").lower()
         if not alias:
@@ -52,6 +66,7 @@ def build_mcp_server_configs(raw_endpoints: str) -> list[MCPServerConfig]:
         if alias[0].isdigit():
             alias = f"mcp_{alias}"
 
+        # 处理别名冲突，保证同一轮配置内别名唯一。
         if alias in used_aliases:
             alias = f"{alias}_{index}"
         used_aliases.add(alias)
@@ -133,6 +148,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
+        """
+        健康检查端点。
+
+        除基础存活状态外，还会返回 MCP 连接数量、工具数量以及最近唤醒快照，
+        便于运维快速判断系统当前是否具备完整工作能力。
+        """
         mcp_manager: MCPManager | None = getattr(app.state, "mcp_manager", None)
         mcp_tool_count = 0
         mcp_server_count = 0

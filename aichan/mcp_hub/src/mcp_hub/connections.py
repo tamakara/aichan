@@ -1,3 +1,12 @@
+"""
+MCP 多服务连接池实现。
+
+该模块聚焦在“连接生命周期管理”：
+1. 按配置建立多个 MCP 会话；
+2. 统一注册唤醒通知处理器；
+3. 在失败或停止时完成资源回收，避免连接泄露。
+"""
+
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
