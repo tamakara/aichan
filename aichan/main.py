@@ -99,7 +99,8 @@ async def app_lifespan(app: FastAPI):
     mcp_manager = MCPManager(
         server_configs=server_configs,
     )
-    retry_seconds = max(0.2, float(settings.mcp_connect_retry_seconds))
+    # 重试间隔下限已由配置层校验（>=1秒），此处直接使用配置值。
+    retry_seconds = settings.mcp_connect_retry_seconds
     while True:
         try:
             await mcp_manager.start()

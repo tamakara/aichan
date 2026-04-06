@@ -7,7 +7,7 @@
 3. 通过模块级 `settings` 单例供全局复用。
 """
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,8 +26,8 @@ class AppSettings(BaseSettings):
 
     # MCPHub 连接配置（逗号分隔多个 Streamable HTTP 端点）。
     mcp_server_endpoints: str
-    # MCP 首次连接失败后的重试间隔（秒）。
-    mcp_connect_retry_seconds: float = 2.0
+    # MCP 首次连接失败后的重试间隔（秒），最小值为 1 秒。
+    mcp_connect_retry_seconds: float = Field(default=2.0, ge=1.0)
 
     model_config = SettingsConfigDict(
         env_file=".env",
