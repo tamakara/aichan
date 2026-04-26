@@ -1,6 +1,5 @@
 from threading import Lock
 
-import anyio
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
@@ -26,21 +25,16 @@ app = FastAPI(
     description="HTTP API wrapper around AgentCore.",
 )
 
-
-def _chat(user_input: str, max_turns: int) -> str:
-    with agent_lock:
-        return agent.chat(user_input=user_input, max_turns=max_turns)
-
-
 @app.get("/healthz", response_model=HealthResponse)
-async def healthz() -> HealthResponse:
+def healthz() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest) -> ChatResponse:
     try:
-        reply = await anyio.to_thread.run_sync(_chat, req.user_input, req.max_turns)
+        with agent_lock:
+            reply = agent.chat(user_input=req.user_input, max_turns=req.max_turns)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ChatResponse(reply=reply)
