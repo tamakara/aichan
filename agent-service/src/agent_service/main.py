@@ -1,11 +1,11 @@
 from threading import Lock
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 
 from .agent_core import AgentCore
+from .api import create_router
 from .config import get_settings, get_system_prompt
-from .schemas import ChatRequest, ChatResponse, HealthResponse
 
 settings = get_settings()
 system_prompt = get_system_prompt()
@@ -24,20 +24,7 @@ app = FastAPI(
     version="0.1.0",
     description="HTTP API wrapper around AgentCore.",
 )
-
-@app.get("/healthz", response_model=HealthResponse)
-def healthz() -> HealthResponse:
-    return HealthResponse(status="ok")
-
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
-    try:
-        with agent_lock:
-            reply = agent.chat(user_input=req.user_input, max_turns=req.max_turns)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ChatResponse(reply=reply)
+app.include_router(create_router(agent=agent, agent_lock=agent_lock))
 
 
 def run() -> None:
