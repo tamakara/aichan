@@ -36,6 +36,8 @@ class AgentCore:
     def chat(self, user_input: str, max_turns: int = 10) -> str:
         self._messages_storage.add_user_message(user_input)
 
+        # 使用有限轮次循环驱动「模型回复 -> 工具调用 -> 回填结果」闭环，
+        # 防止模型持续请求工具导致无界执行。
         for _ in range(max_turns):
             llm_response = self._llm_client.generate(
                 messages=self._messages_storage.get_messages(),
@@ -52,6 +54,7 @@ class AgentCore:
                     f"LLM response ended with unexpected reason: {llm_response.finish_reason}"
                 )
 
+            # 只有模型明确请求工具时才进入调用分支，保持消息流与 OpenAI tool-calls 协议一致。
             for tool_call in llm_response.tool_calls:
                 tool_call_id = tool_call.id
                 tool_name = tool_call.function.name

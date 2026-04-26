@@ -29,6 +29,7 @@ class ToolRegistry:
         except Exception as exc:
             raise RuntimeError("连接 MCP SSE 服务失败") from exc
 
+        # 启动阶段把远端工具元数据固化为本地映射，后续只按名称检索，避免每轮请求都拉取工具列表。
         for remote_tool in remote_tools:
             self._mcp_tools[remote_tool.name] = McpToolBinding(
                 remote_name=remote_tool.name,
@@ -60,6 +61,7 @@ class ToolRegistry:
         )
 
     def _refresh_tools_schema(self) -> None:
+        # 预先构造 OpenAI 函数调用协议所需 schema，减少运行时重复拼装开销。
         self._tools_schema = [
             {
                 "type": "function",
@@ -98,6 +100,8 @@ class ToolRegistry:
 
     @staticmethod
     def _normalize_schema(schema: Any) -> Dict[str, Any]:
+        # 部分 MCP 工具返回的 schema 可能缺少 type/properties，这里兜底为 object，
+        # 避免上游 LLM 在函数调用阶段因参数协议不完整而拒绝生成调用。
         if not isinstance(schema, dict):
             return {"type": "object", "properties": {}}
         out = dict(schema)

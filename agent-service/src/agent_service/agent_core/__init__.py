@@ -1,4 +1,4 @@
-"""Public package exports for agent_service."""
+"""agent_core 对外导出定义。"""
 
 from .agent_core import AgentCore
 

@@ -17,6 +17,7 @@ class LlmClient:
         temperature: float = 0.7,
     ) -> LlmResponse:
         try:
+            # 统一在此处约束 tool_choice 与 temperature，避免调用方分散配置导致行为漂移。
             response = self.client.chat.completions.create(
                 messages=messages,
                 model=self.model,
