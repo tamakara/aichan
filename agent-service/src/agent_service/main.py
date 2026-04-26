@@ -32,11 +32,6 @@ def _chat(user_input: str, max_turns: int) -> str:
         return agent.chat(user_input=user_input, max_turns=max_turns)
 
 
-def _clear_session() -> None:
-    with agent_lock:
-        agent.clear_session()
-
-
 @app.get("/healthz", response_model=HealthResponse)
 async def healthz() -> HealthResponse:
     return HealthResponse(status="ok")
@@ -49,11 +44,6 @@ async def chat(req: ChatRequest) -> ChatResponse:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ChatResponse(reply=reply)
-
-
-@app.delete("/session", status_code=204)
-async def clear_session() -> None:
-    await anyio.to_thread.run_sync(_clear_session)
 
 
 def run() -> None:

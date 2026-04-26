@@ -36,6 +36,3 @@ class MessagesStorage:
 
     def get_messages(self) -> List[LlmMessage]:
         return self._messages
-
-    def clear(self) -> None:
-        self._messages.clear()

@@ -71,7 +71,6 @@ uv run --package agent-service agent-service
 
 - `GET /healthz`
 - `POST /chat`
-- `DELETE /session`
 
 `POST /chat` 示例：
 

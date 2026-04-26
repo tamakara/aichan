@@ -77,7 +77,3 @@ class AgentCore:
         raise RuntimeError(
             f"Agent failed to complete the task within {max_turns} turns of interaction."
         )
-
-    def clear_session(self) -> None:
-        self._messages_storage.clear()
-        self._messages_storage.add_system_message(self._system_prompt)
