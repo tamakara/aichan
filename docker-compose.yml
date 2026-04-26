@@ -1,25 +1,12 @@
 services:
-  cli-mcp-server:
+  agent-service-api:
     build:
-      context: ./mcp_servers
-      dockerfile: cli/Dockerfile
-    environment:
-      CLI_SERVER_HOST: 0.0.0.0
-      CLI_SERVER_PORT: 9000
-    ports:
-      - "9000:9000"
-    restart: unless-stopped
-  aichan:
-    build:
-      context: ./aichan
+      context: .
       dockerfile: Dockerfile
-    environment:
-      LLM_API_TYPE: ${LLM_API_TYPE}
-      LLM_API_KEY: ${LLM_API_KEY}
-      LLM_BASE_URL: ${LLM_BASE_URL}
-      LLM_MODEL_NAME: ${LLM_MODEL_NAME}
-      LLM_TEMPERATURE: ${LLM_TEMPERATURE}
-      MCP_SERVER_ENDPOINTS: http://cli-mcp-server:9000/mcp
+    image: agent-service-api:latest
+    container_name: agent-service-api
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     restart: unless-stopped

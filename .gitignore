@@ -1,4 +1,11 @@
-__pycache__
-.vscode/
-.venv
-.env
+# uv / virtual env
+.venv/
+.uv-cache/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS / editor
+.DS_Store
+Thumbs.db
