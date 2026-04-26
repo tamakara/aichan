@@ -1,12 +1,32 @@
 services:
-  agent-service-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: agent-service-api:latest
-    container_name: agent-service-api
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
     restart: unless-stopped
+    environment:
+      DOCKER_MCP_IN_CONTAINER: "1"
+    command:
+      - --transport=sse
+      - --port=9000
+      - --servers=${MCP_GATEWAY_SERVERS:-duckduckgo,fetch}
+    ports:
+      - "${MCP_GATEWAY_PORT:-9000}:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  agent-service:
+    build:
+      context: ./agent-service
+    restart: unless-stopped
+    depends_on:
+      - mcp-gateway
+    environment:
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-gpt-4.1-mini}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      MCP_SSE_URL: http://mcp-gateway:9000/sse
+      MCP_SSE_BEARER_TOKEN: ${MCP_SSE_BEARER_TOKEN:-}
+      HOST: 0.0.0.0
+      PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PORT:-8000}:8000"

@@ -36,7 +36,7 @@ uv sync --all-packages
 本地部署前，先运行以下命令启动 MCP 网关：
 
 ```bash
-docker mcp gateway run --transport sse --port 8080
+docker mcp gateway run --transport sse --port 9000
 ```
 
 启动后，从网关输出中获取并填写：
