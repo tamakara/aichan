@@ -15,3 +15,9 @@ def main() -> None:
         port=settings.port,
         log_level=settings.log_level,
     )
+
+
+if __name__ == "__main__":
+    # Docker 通过 `python -m agent_service.main` 启动时，必须显式调用 main，
+    # 否则模块只会被导入后立即退出，触发 compose 的重启循环。
+    main()

@@ -51,3 +51,5 @@ uv run --package agent-service run
 ```bash
 python -m agent_service.main
 ```
+
+该入口依赖 `main.py` 的 `__main__` 调用 `main()`，以确保容器前台进程持续运行。
