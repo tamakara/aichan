@@ -40,7 +40,7 @@
 本地运行（在仓库根目录）：
 
 ```bash
-uv run --package agent-service agent-service
+uv run --package agent-service run
 ```
 
 容器运行入口：
