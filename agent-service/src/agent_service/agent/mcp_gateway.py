@@ -17,9 +17,9 @@ class McpToolBinding:
 
 
 class McpGateway:
-    def __init__(self, sse_url: str, bearer_token: str | None = None):
+    def __init__(self, sse_url: str, auth_token: str | None = None):
         self._sse_url = sse_url
-        self._bearer_token = bearer_token
+        self._auth_token = auth_token
         self._mcp_tools: Dict[str, McpToolBinding] = {}
         self._tools_schema: List[Dict[str, Any]] = []
 
@@ -61,7 +61,6 @@ class McpGateway:
         )
 
     def _refresh_tools_schema(self) -> None:
-        # 预先构造 OpenAI 函数调用协议所需 schema，减少运行时重复拼装开销。
         self._tools_schema = [
             {
                 "type": "function",
@@ -88,8 +87,8 @@ class McpGateway:
     @asynccontextmanager
     async def _mcp_session(self) -> AsyncIterator[ClientSession]:
         headers = (
-            {"Authorization": f"Bearer {self._bearer_token}"}
-            if self._bearer_token
+            {"Authorization": f"Bearer {self._auth_token}"}
+            if self._auth_token
             else None
         )
         async with sse_client(self._sse_url, headers=headers) as streams:
@@ -100,8 +99,6 @@ class McpGateway:
 
     @staticmethod
     def _normalize_schema(schema: Any) -> Dict[str, Any]:
-        # 部分 MCP 工具返回的 schema 可能缺少 type/properties，这里兜底为 object，
-        # 避免上游 LLM 在函数调用阶段因参数协议不完整而拒绝生成调用。
         if not isinstance(schema, dict):
             return {"type": "object", "properties": {}}
         out = dict(schema)

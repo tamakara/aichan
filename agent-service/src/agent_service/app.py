@@ -20,7 +20,7 @@ messages_list.add_message(role="system", content=SYSTEM_PROMPT)
 
 mcp_gateway = McpGateway(
     sse_url=settings.mcp_gateway_sse_url,
-    bearer_token=settings.mcp_gateway_bearer_token,
+    auth_token=settings.mcp_gateway_auth_token,
 )
 
 print(mcp_gateway.get_tools_schema())

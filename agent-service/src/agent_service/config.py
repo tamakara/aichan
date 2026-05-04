@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_base_url: str
     mcp_gateway_sse_url: str = "http://localhost:9000/sse"
-    mcp_gateway_bearer_token: str
+    mcp_gateway_auth_token: str
     host: str = "localhost"
     port: int = 8000
     log_level: str
