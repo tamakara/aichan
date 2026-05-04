@@ -6,26 +6,19 @@ from .tool_registry import ToolRegistry
 
 
 class AgentCore:
-    """
-    智能体类，负责维护对话历史、管理工具调用流程与大模型交互。
-    """
-
     def __init__(
         self,
-        llm_model_name: str,
-        llm_api_key: str,
-        llm_base_url: str,
-        system_prompt: str,
+        model_name: str,
+        openai_api_key: str,
+        openai_base_url: str,
+        messages_storage: MessagesStorage,
         mcp_gateway_sse_url: str,
-        mcp_gateway_auth_token: str = "",
+        mcp_gateway_auth_token: str,
     ):
         self._llm_client = LlmClient(
-            model=llm_model_name, api_key=llm_api_key, base_url=llm_base_url
+            model=model_name, api_key=openai_api_key, base_url=openai_base_url
         )
-
-        self._system_prompt = system_prompt
-        self._messages_storage = MessagesStorage()
-        self._messages_storage.add_system_message(self._system_prompt)
+        self._messages_storage = messages_storage
 
         self._tool_registry = ToolRegistry(
             sse_url=mcp_gateway_sse_url,

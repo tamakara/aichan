@@ -2,18 +2,21 @@ from threading import Lock
 
 from fastapi import FastAPI
 
-from .agent import AgentCore
+from .agent import AgentCore, MessagesStorage
 from .config import get_settings
 from .prompts import SYSTEM_PROMPT
 from .router import create_router
 
 settings = get_settings()
 
+messages_storage = MessagesStorage()
+messages_storage.add_system_message(SYSTEM_PROMPT)
+
 agent = AgentCore(
-    llm_model_name=settings.llm_model_name,
-    llm_api_key=settings.llm_api_key,
-    llm_base_url=settings.llm_base_url,
-    system_prompt=SYSTEM_PROMPT,
+    model_name=settings.model_name,
+    openai_api_key=settings.openai_api_key,
+    openai_base_url=settings.openai_base_url,
+    messages_storage=messages_storage,
     mcp_gateway_sse_url=settings.mcp_gateway_sse_url,
     mcp_gateway_auth_token=settings.mcp_gateway_auth_token,
 )

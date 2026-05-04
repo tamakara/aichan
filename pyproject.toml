@@ -8,6 +8,4 @@ dependencies = []
 members = ["agent-service"]
 
 [dependency-groups]
-dev = [
-    "isort>=8.0.1",
-]
+dev = []

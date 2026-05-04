@@ -4,9 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # 默认值统一收口在仓库根目录 .env.example，避免代码与部署配置出现双重真相。
-    llm_model_name: str
-    llm_api_key: str
-    llm_base_url: str
+    model_name: str
+    openai_api_key: str
+    openai_base_url: str
     mcp_gateway_sse_url: str = "http://localhost:9000/sse"
     mcp_gateway_auth_token: str
     host: str = "localhost"
