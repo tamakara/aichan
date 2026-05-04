@@ -33,8 +33,8 @@ class AgentCore:
         )
         self._tool_registry.register_mcp_server()
 
-    def chat(self, user_input: str, max_turns: int = 10) -> str:
-        self._messages_storage.add_user_message(user_input)
+    def chat(self, user_message: str, max_turns: int = 10) -> str:
+        self._messages_storage.add_user_message(user_message)
 
         # 使用有限轮次循环驱动「模型回复 -> 工具调用 -> 回填结果」闭环，
         # 防止模型持续请求工具导致无界执行。

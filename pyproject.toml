@@ -6,3 +6,8 @@ dependencies = []
 
 [tool.uv.workspace]
 members = ["agent-service"]
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+]
