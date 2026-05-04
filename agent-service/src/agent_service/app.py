@@ -22,8 +22,7 @@ mcp_gateway = McpGateway(
     sse_url=settings.mcp_gateway_sse_url,
     auth_token=settings.mcp_gateway_auth_token,
 )
-
-print(mcp_gateway.get_tools_schema())
+mcp_gateway.register_mcp_server()
 
 agent = AgentCore(
     llm_client=llm_client,
