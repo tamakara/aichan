@@ -10,7 +10,7 @@ from .router import create_router
 settings = get_settings()
 
 llm_client = LlmClient(
-    model=settings.model_name,
+    model_name=settings.model_name,
     api_key=settings.openai_api_key,
     base_url=settings.openai_base_url,
 )
@@ -22,6 +22,8 @@ mcp_gateway = McpGateway(
     sse_url=settings.mcp_gateway_sse_url,
     bearer_token=settings.mcp_gateway_bearer_token,
 )
+
+print(mcp_gateway.get_tools_schema())
 
 agent = AgentCore(
     llm_client=llm_client,
