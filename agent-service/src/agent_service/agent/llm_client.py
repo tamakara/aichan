@@ -2,7 +2,7 @@ from typing import List, cast
 
 from openai import OpenAI
 
-from .types import LlmMessage, LlmResponse, ToolCall
+from .types import Message, LlmResponse, ToolCall
 
 
 class LlmClient:
@@ -12,7 +12,7 @@ class LlmClient:
 
     def generate(
         self,
-        messages: List[LlmMessage],
+        messages: List[Message],
         tools_schema: List,
         temperature: float = 0.7,
     ) -> LlmResponse:

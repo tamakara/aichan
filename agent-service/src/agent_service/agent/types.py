@@ -6,7 +6,7 @@ from openai.types.chat import (
 )
 from pydantic import BaseModel
 
-type LlmMessage = ChatCompletionMessageParam
+type Message = ChatCompletionMessageParam
 type ToolCall = ChatCompletionMessageFunctionToolCall
 
 

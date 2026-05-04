@@ -16,7 +16,7 @@ class McpToolBinding:
     input_schema: Dict[str, Any]
 
 
-class ToolRegistry:
+class McpGateway:
     def __init__(self, sse_url: str, bearer_token: str | None = None):
         self._sse_url = sse_url
         self._bearer_token = bearer_token
