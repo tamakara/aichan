@@ -1,0 +1,2 @@
+﻿class DownstreamCallError(Exception):
+    pass

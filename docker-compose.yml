@@ -26,8 +26,45 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MCP_GATEWAY_SSE_URL: http://mcp-gateway:9000/sse
       MCP_GATEWAY_AUTH_TOKEN: ${MCP_GATEWAY_AUTH_TOKEN}
-      LOG_LEVEL: ${LOG_LEVEL}
       HOST: 0.0.0.0
       PORT: 8000
+      LOG_LEVEL: debug
     ports:
       - "8000:8000"
+
+  qq-adapter-service:
+    build:
+      context: ./qq-adapter-service
+    restart: unless-stopped
+    depends_on:
+      hub-service:
+        condition: service_started
+    environment:
+      DOWNSTREAM_WS_URL: ${DOWNSTREAM_WS_URL}
+      DOWNSTREAM_WS_TOKEN: ${DOWNSTREAM_WS_TOKEN}
+      DOWNSTREAM_WS_OPEN_TIMEOUT_SECONDS: ${DOWNSTREAM_WS_OPEN_TIMEOUT_SECONDS}
+      DOWNSTREAM_WS_RECONNECT_INTERVAL_SECONDS: ${DOWNSTREAM_WS_RECONNECT_INTERVAL_SECONDS}
+      ONEBOT_WS_ACTION_TIMEOUT_SECONDS: ${ONEBOT_WS_ACTION_TIMEOUT_SECONDS}
+      HOST: 0.0.0.0
+      PORT: 8010
+      LOG_LEVEL: debug
+    ports:
+      - "8010:8010"
+
+  hub-service:
+    build:
+      context: ./hub-service
+    restart: unless-stopped
+    depends_on:
+      agent-service:
+        condition: service_started
+    environment:
+      HUB_HOST: 0.0.0.0
+      HUB_PORT: 8100
+      HUB_LOG_LEVEL: ${HUB_LOG_LEVEL}
+      HUB_AGENT_SERVICE_URL: ${HUB_AGENT_SERVICE_URL}
+      HUB_QQ_ADAPTER_API_URL: ${HUB_QQ_ADAPTER_API_URL}
+      HUB_AGENT_MAX_TURNS: ${HUB_AGENT_MAX_TURNS}
+      HUB_HTTP_TIMEOUT_SECONDS: ${HUB_HTTP_TIMEOUT_SECONDS}
+    ports:
+      - "8100:8100"

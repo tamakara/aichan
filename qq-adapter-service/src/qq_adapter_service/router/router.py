@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+
+from ..services.adapter_service import AdapterService
+from ..services.connection_state import NapcatConnectionState
+from ..services.errors import NapcatDownstreamError
+from ..services.napcat_ws_gateway import NapcatWsGateway
+from .schemas import (
+    HealthResponse,
+    SendMessageRequest,
+    SendMessageResponse,
+    UserInfoResponse,
+)
+
+
+def create_router(
+    adapter_service: AdapterService,
+    napcat_ws_gateway: NapcatWsGateway,
+    napcat_connection_state: NapcatConnectionState,
+) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/healthz", response_model=HealthResponse)
+    async def healthz() -> HealthResponse:
+        return HealthResponse()
+
+    @router.websocket("/napcat/ws")
+    async def napcat_ws(websocket: WebSocket) -> None:
+        napcat_connection_state.set(websocket)
+        try:
+            await napcat_ws_gateway.handle_connection(websocket)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            napcat_connection_state.clear(websocket)
+
+    @router.post("/api/v1/message/send", response_model=SendMessageResponse)
+    async def send_message(request: SendMessageRequest) -> SendMessageResponse:
+        websocket = napcat_connection_state.get()
+        if websocket is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="napcat ws is not connected",
+            )
+
+        try:
+            outbound_action = adapter_service.build_send_message_action(
+                session_id=request.session_id, content=request.content
+            )
+            result = await napcat_ws_gateway.send_action(
+                websocket=websocket,
+                action=outbound_action.action,
+                params=outbound_action.params,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="napcat ws action timeout") from exc
+        except NapcatDownstreamError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        return SendMessageResponse(ok=True, data=result)
+
+    @router.get("/api/v1/user/{user_id}/info", response_model=UserInfoResponse)
+    async def get_user_info(user_id: str) -> UserInfoResponse:
+        websocket = napcat_connection_state.get()
+        if websocket is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="napcat ws is not connected",
+            )
+
+        try:
+            outbound_action = adapter_service.build_get_user_info_action(abstract_user_id=user_id)
+            result = await napcat_ws_gateway.send_action(
+                websocket=websocket,
+                action=outbound_action.action,
+                params=outbound_action.params,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="napcat ws action timeout") from exc
+        except NapcatDownstreamError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        return UserInfoResponse(ok=True, data=result)
+
+    return router
