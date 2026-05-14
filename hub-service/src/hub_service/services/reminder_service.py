@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, timezone
 from threading import Lock
 
-from .errors import DownstreamCallError
 from ..router.schemas import ReminderItem
 
 
@@ -47,21 +46,8 @@ class HubPipelineService:
             raw_event=raw_event,
         )
 
-        try:
-            reply = await self._outbound_service.call_agent(user_message=content)
-        except DownstreamCallError:
-            self._logger.exception(
-                "hub stage=agent user_id=%s session_id=%s", user_id, session_id
-            )
-            return
-
-        try:
-            await self._outbound_service.send_reply(session_id=session_id, content=reply)
-        except DownstreamCallError:
-            self._logger.exception(
-                "hub stage=reply user_id=%s session_id=%s", user_id, session_id
-            )
-            return
+        reply = await self._outbound_service.call_agent(user_message=content)
+        await self._outbound_service.send_reply(session_id=session_id, content=reply)
 
 
 class OutboundServiceProtocol:

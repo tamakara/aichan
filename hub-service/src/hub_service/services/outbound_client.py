@@ -5,7 +5,6 @@ from typing import Any
 import httpx
 
 from ..router.schemas import AgentChatRequest, AgentChatResponse, SendMessageRequest, SendMessageResponse
-from .errors import DownstreamCallError
 
 
 class OutboundClient:
@@ -23,46 +22,23 @@ class OutboundClient:
     async def call_agent(self, user_message: str) -> str:
         payload = AgentChatRequest(user_message=user_message, max_turns=self._agent_max_turns)
         data = await self._post_json(f"{self._agent_service_url}/chat", payload.model_dump())
-
-        try:
-            response = AgentChatResponse.model_validate(data)
-        except Exception as exc:
-            raise DownstreamCallError(f"invalid agent response: {data}") from exc
-
+        response = AgentChatResponse.model_validate(data)
         return response.reply
 
     async def send_reply(self, session_id: str, content: str) -> None:
         payload = SendMessageRequest(session_id=session_id, content=content)
         data = await self._post_json(f"{self._qq_adapter_api_url}/api/v1/message/send", payload.model_dump())
-
-        try:
-            parsed = SendMessageResponse.model_validate(data)
-        except Exception as exc:
-            raise DownstreamCallError(f"invalid qq-adapter response: {data}") from exc
-
+        parsed = SendMessageResponse.model_validate(data)
         if not parsed.ok:
-            raise DownstreamCallError(f"qq-adapter send failed: {data}")
+            raise ValueError("qq-adapter send returned ok=false")
 
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        try:
-            response = await self._client.post(url, json=payload)
-            response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise DownstreamCallError(f"timeout calling downstream: url={url}") from exc
-        except httpx.HTTPStatusError as exc:
-            raise DownstreamCallError(
-                f"http error calling downstream: url={url} status={exc.response.status_code} body={exc.response.text}"
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise DownstreamCallError(f"request failed calling downstream: url={url} err={exc}") from exc
-
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise DownstreamCallError(f"downstream response is not json: url={url}") from exc
+        response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         if not isinstance(data, dict):
-            raise DownstreamCallError(f"downstream json is not object: url={url}")
+            raise ValueError(f"downstream json is not object: url={url}")
 
         return data
 

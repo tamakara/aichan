@@ -2,7 +2,6 @@
 
 import pytest
 
-from hub_service.services.errors import DownstreamCallError
 from hub_service.services.outbound_client import OutboundClient
 
 
@@ -66,5 +65,5 @@ def test_call_agent_invalid_response_raises() -> None:
     )
     client._client = DummyHttpClient([DummyResponse({"bad": "shape"})])  # type: ignore[attr-defined]
 
-    with pytest.raises(DownstreamCallError):
+    with pytest.raises(Exception):
         asyncio.run(client.call_agent("hello"))

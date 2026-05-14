@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from .schemas import HealthResponse, HubEvent
+from .schemas import HealthResponse
 from ..services.reminder_service import HubPipelineService
 
 
@@ -24,16 +25,11 @@ def create_router(hub_pipeline_service: HubPipelineService) -> APIRouter:
         try:
             while True:
                 data = await websocket.receive_json()
-                if not isinstance(data, dict):
+                event = _parse_hub_event(data)
+                if event is None:
                     continue
 
-                try:
-                    event = HubEvent.model_validate(data)
-                except Exception:
-                    # 上游数据兼容处理：不让单条脏数据影响连接存活。
-                    continue
-
-                if event.message_type != "private":
+                if event["message_type"] != "private":
                     # 当前中枢仅处理私聊触发，群聊事件直接忽略。
                     continue
 
@@ -41,10 +37,10 @@ def create_router(hub_pipeline_service: HubPipelineService) -> APIRouter:
                 asyncio.create_task(
                     _run_pipeline_safely(
                         hub_pipeline_service=hub_pipeline_service,
-                        user_id=event.user_id,
-                        session_id=event.session_id,
-                        content=event.content,
-                        raw_event=event.raw_event,
+                        user_id=event["user_id"],
+                        session_id=event["session_id"],
+                        content=event["content"],
+                        raw_event=event["raw_event"],
                         logger=logger,
                     )
                 )
@@ -71,3 +67,36 @@ async def _run_pipeline_safely(
         )
     except Exception:
         logger.exception("hub stage=receive user_id=%s session_id=%s", user_id, session_id)
+
+
+def _parse_hub_event(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+
+    session_id = data.get("session_id")
+    user_id = data.get("user_id")
+    content = data.get("content")
+    source = data.get("source")
+    message_type = data.get("message_type")
+    raw_event = data.get("raw_event")
+
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    if not isinstance(user_id, str) or not user_id:
+        return None
+    if not isinstance(content, str) or not content:
+        return None
+    if source != "qq":
+        return None
+    if message_type not in ("group", "private"):
+        return None
+    if not isinstance(raw_event, dict):
+        return None
+
+    return {
+        "session_id": session_id,
+        "user_id": user_id,
+        "content": content,
+        "message_type": message_type,
+        "raw_event": raw_event,
+    }

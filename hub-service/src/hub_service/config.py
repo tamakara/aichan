@@ -29,13 +29,7 @@ class Settings:
 
 
 def _load_config() -> dict[str, Any]:
-    # 中枢配置只允许来自服务目录内的 YAML，避免启动参数和部署环境各自维护一套真相。
-    try:
-        payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"配置文件不存在: {CONFIG_PATH}") from exc
-    except yaml.YAMLError as exc:
-        raise ValueError(f"配置文件格式错误: {CONFIG_PATH}") from exc
+    payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
     if payload is None:
         return {}
