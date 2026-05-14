@@ -20,7 +20,6 @@ class HubSettings:
     agent_url: str
     qq_adapter_url: str
     max_turns: int
-    http_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -66,13 +65,6 @@ def _require_int(section: Mapping[str, Any], key: str) -> int:
     return value
 
 
-def _require_float(section: Mapping[str, Any], key: str) -> float:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"配置项 `{key}` 必须是数字: {CONFIG_PATH}")
-    return float(value)
-
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     data = _load_config()
@@ -89,6 +81,5 @@ def get_settings() -> Settings:
             agent_url=_require_str(hub, "agent_url"),
             qq_adapter_url=_require_str(hub, "qq_adapter_url"),
             max_turns=_require_int(hub, "max_turns"),
-            http_timeout_seconds=_require_float(hub, "http_timeout_seconds"),
         ),
     )

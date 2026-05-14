@@ -44,7 +44,6 @@ def test_call_agent_and_send_reply_success() -> None:
         agent_service_url="http://agent-service:8000",
         qq_adapter_api_url="http://qq-adapter-service:8010",
         agent_max_turns=10,
-        timeout_seconds=5,
     )
     client._client = DummyHttpClient(
         [
@@ -64,7 +63,6 @@ def test_call_agent_invalid_response_raises() -> None:
         agent_service_url="http://agent-service:8000",
         qq_adapter_api_url="http://qq-adapter-service:8010",
         agent_max_turns=10,
-        timeout_seconds=5,
     )
     client._client = DummyHttpClient([DummyResponse({"bad": "shape"})])  # type: ignore[attr-defined]
 

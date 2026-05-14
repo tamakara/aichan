@@ -14,12 +14,11 @@ class OutboundClient:
         agent_service_url: str,
         qq_adapter_api_url: str,
         agent_max_turns: int,
-        timeout_seconds: float,
     ) -> None:
         self._agent_service_url = agent_service_url.rstrip("/")
         self._qq_adapter_api_url = qq_adapter_api_url.rstrip("/")
         self._agent_max_turns = agent_max_turns
-        self._client = httpx.AsyncClient(timeout=timeout_seconds)
+        self._client = httpx.AsyncClient(timeout=None)
 
     async def call_agent(self, user_message: str) -> str:
         payload = AgentChatRequest(user_message=user_message, max_turns=self._agent_max_turns)

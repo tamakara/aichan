@@ -48,7 +48,6 @@ hub:
   agent_url: http://agent-service:8000
   qq_adapter_url: http://qq-adapter-service:8010
   max_turns: 10
-  http_timeout_seconds: 50
 ```
 
 ## 启动
