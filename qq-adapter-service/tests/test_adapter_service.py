@@ -121,6 +121,41 @@ def test_build_get_user_info_action(service: AdapterService) -> None:
     assert action.params["user_id"] == 777
 
 
+def test_build_get_history_action_group(service: AdapterService) -> None:
+    action = service.build_get_history_action("group_123", 20, 88)
+    assert action.action == "get_group_msg_history"
+    assert action.params["group_id"] == 123
+    assert action.params["count"] == 20
+    assert action.params["message_seq"] == 88
+
+
+def test_build_get_history_action_private(service: AdapterService) -> None:
+    action = service.build_get_history_action("private_456", 10, None)
+    assert action.action == "get_friend_msg_history"
+    assert action.params["user_id"] == 456
+    assert action.params["count"] == 10
+    assert action.params["message_seq"] == 0
+
+
+def test_normalize_history_result(service: AdapterService) -> None:
+    result = service.normalize_history_result(
+        session_id="private_456",
+        raw_result={
+            "status": "ok",
+            "retcode": 0,
+            "data": {
+                "messages": [
+                    {"message_id": "11", "text": "old"},
+                    {"message_id": 12, "text": "new"},
+                ]
+            },
+        },
+    )
+    assert result["session_id"] == "private_456"
+    assert len(result["messages"]) == 2
+    assert result["next_before_message_id"] == 12
+
+
 def test_invalid_session_prefix(service: AdapterService) -> None:
     with pytest.raises(ValueError):
         service.build_send_message_action("foo_1", "bad")

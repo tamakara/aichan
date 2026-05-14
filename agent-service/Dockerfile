@@ -9,6 +9,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.7.2 /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml ./
+COPY config.yml ./agent-service/config.yml
 COPY src ./src
 
 RUN uv pip install --system .

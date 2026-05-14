@@ -1,4 +1,4 @@
-﻿import uvicorn
+import uvicorn
 
 from .app import app
 from .config import get_settings
@@ -9,9 +9,9 @@ def main() -> None:
 
     uvicorn.run(
         app,
-        host=settings.hub_host,
-        port=settings.hub_port,
-        log_level=settings.hub_log_level,
+        host=settings.server.host,
+        port=settings.server.port,
+        log_level=settings.server.log_level,
     )
 
 

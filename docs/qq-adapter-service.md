@@ -1,6 +1,8 @@
-﻿# qq-adapter-service
+# qq-adapter-service
 
-`qq-adapter-service` 是 AICHAN 的 QQ 协议过滤与桥接网关，负责在 OneBot v11 与下游 WebSocket 模块之间做实时双向转发。
+`qq-adapter-service` 是 AICHAN 的 QQ 协议过滤、桥接与 MCP 工具网关，负责：
+- 在 OneBot v11 与下游 WebSocket 模块之间做实时双向转发。
+- 把 QQ 历史消息查询能力暴露为 MCP 工具，供 MCP Gateway/agent 调用。
 
 ## 设计目标
 
@@ -11,7 +13,7 @@
 ## 通信拓扑
 
 - NapCat -> `qq-adapter-service`：反向 WebSocket，地址 `ws://qq-adapter-service:8010/napcat/ws`
-- `qq-adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `DOWNSTREAM_WS_URL` 指定
+- `qq-adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `adapter.downstream_ws_url` 指定
 
 ## 路由契约
 
@@ -31,6 +33,30 @@
   - 入参：`user_id=qq_123456`
   - 行为：转换为 `get_stranger_info` action，通过当前 NapCat WebSocket 连接下发。
 
+- `GET /api/v1/message/history`
+  - 入参：
+    - `session_id=group_123|private_456`
+    - `limit=1..50`
+    - `before_message_id` 可选
+  - 行为：
+    - `group_*` -> `get_group_msg_history`
+    - `private_*` -> `get_friend_msg_history`
+    - 返回 `messages` 与 `next_before_message_id`
+
+## MCP 工具契约
+
+- 工具名：`qq_get_message_history`
+  - 参数：
+    - `session_id`：`group_123` 或 `private_456`
+    - `limit`：`1..50`，默认 `20`
+    - `before_message_id`：可选，正整数
+  - 行为：
+    - 工具参数校验通过后，调用本服务 HTTP 接口 `GET /api/v1/message/history`
+    - 返回 MCP `tool result` 的 JSON 字符串，字段固定为：
+      - `session_id`
+      - `messages`
+      - `next_before_message_id`（无更多记录时为 `null`）
+
 ## ID 映射规则
 
 - 群会话：`group_id <-> session_id=group_{group_id}`
@@ -41,16 +67,30 @@
 
 转发到下游 WebSocket 的 JSON 字段：`session_id`、`user_id`、`content`、`source`、`message_type`、`raw_event`。
 
-## 环境变量
+## 配置文件
 
-- `HOST`
-- `PORT`
-- `LOG_LEVEL`
-- `DOWNSTREAM_WS_URL`
-- `DOWNSTREAM_WS_TOKEN`
-- `DOWNSTREAM_WS_OPEN_TIMEOUT_SECONDS`
-- `DOWNSTREAM_WS_RECONNECT_INTERVAL_SECONDS`
-- `ONEBOT_WS_ACTION_TIMEOUT_SECONDS`
+配置文件路径：`qq-adapter-service/config.yml`
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8010
+  log_level: debug
+
+adapter:
+  downstream_ws_url: ws://hub-service:8020/qq/events
+  downstream_ws_token: ""
+  downstream_ws_open_timeout_seconds: 5
+  downstream_ws_reconnect_interval_seconds: 3
+  onebot_ws_action_timeout_seconds: 5
+
+mcp:
+  base_url: http://qq-adapter-service:8010
+  timeout_seconds: 5
+  log_level: debug
+```
+
+消息历史查询仅在 NapCat WebSocket 已连接时可用。
 
 ## 启动
 
@@ -60,11 +100,23 @@
 uv run --package qq-adapter-service qq-adapter-service
 ```
 
+MCP stdio 入口（供 MCP Gateway 通过 `docker://` 拉起）：
+
+```bash
+uv run --package qq-adapter-service qq-adapter-mcp
+```
+
 Docker Compose 启动：
 
 ```bash
 docker compose up -d --build qq-adapter-service
 ```
+
+## MCP Gateway 接入
+
+- Gateway 服务参数中增加 `docker://qq-adapter-service:latest`。
+- `qq-adapter-service` 容器镜像默认入口为 `qq-adapter-mcp`（stdio MCP server）。
+- Compose 中通过 `command: ["qq-adapter-service"]` 显式覆盖，保证业务 HTTP 服务与 MCP 工具容器职责分离。
 
 ## NapCat 手动对接
 

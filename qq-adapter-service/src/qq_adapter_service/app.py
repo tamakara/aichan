@@ -12,16 +12,16 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     downstream_ws_client = DownstreamWsClient(
-        ws_url=settings.downstream_ws_url,
-        ws_token=settings.downstream_ws_token,
-        open_timeout_seconds=settings.downstream_ws_open_timeout_seconds,
-        reconnect_interval_seconds=settings.downstream_ws_reconnect_interval_seconds,
+        ws_url=settings.adapter.downstream_ws_url,
+        ws_token=settings.adapter.downstream_ws_token,
+        open_timeout_seconds=settings.adapter.downstream_ws_open_timeout_seconds,
+        reconnect_interval_seconds=settings.adapter.downstream_ws_reconnect_interval_seconds,
     )
     adapter_service = AdapterService()
     napcat_ws_gateway = NapcatWsGateway(
         adapter_service=adapter_service,
         downstream_ws_client=downstream_ws_client,
-        action_timeout_seconds=settings.onebot_ws_action_timeout_seconds,
+        action_timeout_seconds=settings.adapter.onebot_ws_action_timeout_seconds,
     )
     napcat_connection_state = NapcatConnectionState()
 

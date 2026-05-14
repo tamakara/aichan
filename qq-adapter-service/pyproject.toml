@@ -8,8 +8,10 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.6",
+    "httpx>=0.28.1",
+    "mcp>=1.13.0",
     "nonebot-adapter-onebot>=2.4.6",
-    "pydantic-settings>=2.7.1",
+    "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.34.0",
     "websockets>=16.0",
 ]
@@ -22,6 +24,7 @@ test = [
 
 [project.scripts]
 qq-adapter-service = "qq_adapter_service.main:main"
+qq-adapter-mcp = "qq_adapter_service.mcp_main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

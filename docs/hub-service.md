@@ -1,4 +1,4 @@
-﻿# hub-service
+# hub-service
 
 `hub-service` 是 AICHAN 的提醒中枢，负责接收 `qq-adapter-service` 推送的 QQ 私聊提醒，触发 `agent-service` 生成回复，并将回复回写到 `qq-adapter-service`。
 
@@ -34,15 +34,22 @@
   - request: `{"session_id":"private_xxx","content":"..."}`
   - response: `{"ok":true,"data":{...}}`
 
-## 环境变量
+## 配置文件
 
-- `HUB_HOST`
-- `HUB_PORT`
-- `HUB_LOG_LEVEL`
-- `HUB_AGENT_SERVICE_URL`
-- `HUB_QQ_ADAPTER_API_URL`
-- `HUB_AGENT_MAX_TURNS`
-- `HUB_HTTP_TIMEOUT_SECONDS`
+配置文件路径：`hub-service/config.yml`
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8020
+  log_level: debug
+
+hub:
+  agent_url: http://agent-service:8000
+  qq_adapter_url: http://qq-adapter-service:8010
+  max_turns: 10
+  http_timeout_seconds: 50
+```
 
 ## 启动
 

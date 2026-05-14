@@ -15,6 +15,25 @@ class StubAdapterService:
             raise ValueError("bad user")
         return type("Action", (), {"action": "get_stranger_info", "params": {"user_id": 9}})()
 
+    def build_get_history_action(self, session_id, limit, before_message_id):
+        if session_id == "bad":
+            raise ValueError("bad session")
+        return type(
+            "Action",
+            (),
+            {
+                "action": "get_group_msg_history",
+                "params": {"group_id": 9, "count": limit, "message_seq": before_message_id or 0},
+            },
+        )()
+
+    def normalize_history_result(self, session_id, raw_result):
+        return {
+            "session_id": session_id,
+            "messages": [{"message_id": 1, "text": "hello"}],
+            "next_before_message_id": 1,
+        }
+
 
 class StubGateway:
     async def handle_connection(self, websocket):
@@ -72,4 +91,18 @@ def test_get_user_info_validation() -> None:
     state.set(object())  # type: ignore[arg-type]
     client = build_client(StubAdapterService(), StubGateway(), state)
     response = client.get("/api/v1/user/bad/info")
+    assert response.status_code == 422
+
+
+def test_get_message_history_requires_ws_connection() -> None:
+    client = build_client(StubAdapterService(), StubGateway(), NapcatConnectionState())
+    response = client.get("/api/v1/message/history", params={"session_id": "private_1", "limit": 5})
+    assert response.status_code == 503
+
+
+def test_get_message_history_validation() -> None:
+    state = NapcatConnectionState()
+    state.set(object())  # type: ignore[arg-type]
+    client = build_client(StubAdapterService(), StubGateway(), state)
+    response = client.get("/api/v1/message/history", params={"session_id": "bad", "limit": 5})
     assert response.status_code == 422

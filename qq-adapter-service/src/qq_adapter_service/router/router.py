@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 
 from ..services.adapter_service import AdapterService
 from ..services.connection_state import NapcatConnectionState
@@ -8,6 +8,7 @@ from ..services.errors import NapcatDownstreamError
 from ..services.napcat_ws_gateway import NapcatWsGateway
 from .schemas import (
     HealthResponse,
+    MessageHistoryResponse,
     SendMessageRequest,
     SendMessageResponse,
     UserInfoResponse,
@@ -86,5 +87,39 @@ def create_router(
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
         return UserInfoResponse(ok=True, data=result)
+
+    @router.get("/api/v1/message/history", response_model=MessageHistoryResponse)
+    async def get_message_history(
+        session_id: str = Query(min_length=1),
+        limit: int = Query(default=20, ge=1, le=50),
+        before_message_id: int | None = Query(default=None, ge=1),
+    ) -> MessageHistoryResponse:
+        websocket = napcat_connection_state.get()
+        if websocket is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="napcat ws is not connected",
+            )
+
+        try:
+            outbound_action = adapter_service.build_get_history_action(
+                session_id=session_id,
+                limit=limit,
+                before_message_id=before_message_id,
+            )
+            result = await napcat_ws_gateway.send_action(
+                websocket=websocket,
+                action=outbound_action.action,
+                params=outbound_action.params,
+            )
+            data = adapter_service.normalize_history_result(session_id=session_id, raw_result=result)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="napcat ws action timeout") from exc
+        except NapcatDownstreamError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        return MessageHistoryResponse(ok=True, data=data)
 
     return router

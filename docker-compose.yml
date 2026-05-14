@@ -2,13 +2,10 @@ services:
   mcp-gateway:
     image: docker/mcp-gateway:latest
     restart: unless-stopped
-    environment:
-      DOCKER_MCP_IN_CONTAINER: "1"
-      MCP_GATEWAY_AUTH_TOKEN: ${MCP_GATEWAY_AUTH_TOKEN}
     command:
       - --transport=sse
       - --port=9000
-      - --servers=${MCP_GATEWAY_SERVERS}
+      - --servers=playwright,fetch,time,docker://qq-adapter-service:latest
     ports:
       - "9000:9000"
     volumes:
@@ -20,34 +17,23 @@ services:
     restart: unless-stopped
     depends_on:
       - mcp-gateway
-    environment:
-      MODEL_NAME: ${MODEL_NAME}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
-      MCP_GATEWAY_SSE_URL: http://mcp-gateway:9000/sse
-      MCP_GATEWAY_AUTH_TOKEN: ${MCP_GATEWAY_AUTH_TOKEN}
-      HOST: 0.0.0.0
-      PORT: 8000
-      LOG_LEVEL: debug
+    volumes:
+      - ./agent-service/config.yml:/app/agent-service/config.yml:ro
     ports:
       - "8000:8000"
 
   qq-adapter-service:
+    image: qq-adapter-service:latest
     build:
       context: ./qq-adapter-service
     restart: unless-stopped
     depends_on:
       hub-service:
         condition: service_started
-    environment:
-      DOWNSTREAM_WS_URL: ${DOWNSTREAM_WS_URL}
-      DOWNSTREAM_WS_TOKEN: ${DOWNSTREAM_WS_TOKEN}
-      DOWNSTREAM_WS_OPEN_TIMEOUT_SECONDS: ${DOWNSTREAM_WS_OPEN_TIMEOUT_SECONDS}
-      DOWNSTREAM_WS_RECONNECT_INTERVAL_SECONDS: ${DOWNSTREAM_WS_RECONNECT_INTERVAL_SECONDS}
-      ONEBOT_WS_ACTION_TIMEOUT_SECONDS: ${ONEBOT_WS_ACTION_TIMEOUT_SECONDS}
-      HOST: 0.0.0.0
-      PORT: 8010
-      LOG_LEVEL: debug
+    command:
+      - qq-adapter-service
+    volumes:
+      - ./qq-adapter-service/config.yml:/app/qq-adapter-service/config.yml:ro
     ports:
       - "8010:8010"
 
@@ -58,13 +44,7 @@ services:
     depends_on:
       agent-service:
         condition: service_started
-    environment:
-      HUB_HOST: 0.0.0.0
-      HUB_PORT: 8100
-      HUB_LOG_LEVEL: ${HUB_LOG_LEVEL}
-      HUB_AGENT_SERVICE_URL: ${HUB_AGENT_SERVICE_URL}
-      HUB_QQ_ADAPTER_API_URL: ${HUB_QQ_ADAPTER_API_URL}
-      HUB_AGENT_MAX_TURNS: ${HUB_AGENT_MAX_TURNS}
-      HUB_HTTP_TIMEOUT_SECONDS: ${HUB_HTTP_TIMEOUT_SECONDS}
+    volumes:
+      - ./hub-service/config.yml:/app/hub-service/config.yml:ro
     ports:
-      - "8100:8100"
+      - "8020:8020"

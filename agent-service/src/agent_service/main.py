@@ -9,9 +9,9 @@ def main() -> None:
 
     uvicorn.run(
         app,
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level,
+        host=settings.server.host,
+        port=settings.server.port,
+        log_level=settings.server.log_level,
     )
 
 

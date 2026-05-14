@@ -22,6 +22,17 @@ class UserInfoResponse(BaseModel):
     data: dict[str, Any]
 
 
+class MessageHistoryData(BaseModel):
+    session_id: str
+    messages: list[dict[str, Any]]
+    next_before_message_id: int | None = None
+
+
+class MessageHistoryResponse(BaseModel):
+    ok: bool
+    data: MessageHistoryData
+
+
 class FilteredEventPayload(BaseModel):
     session_id: str
     user_id: str

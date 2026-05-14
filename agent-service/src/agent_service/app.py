@@ -10,17 +10,17 @@ from .router import create_router
 settings = get_settings()
 
 llm_client = LlmClient(
-    model_name=settings.model_name,
-    api_key=settings.openai_api_key,
-    base_url=settings.openai_base_url,
+    model_name=settings.agent.model,
+    api_key=settings.agent.openai_api_key,
+    base_url=settings.agent.openai_base_url,
 )
 
 messages_list = MessageList()
 messages_list.add_message(role="system", content=SYSTEM_PROMPT)
 
 mcp_gateway = McpGateway(
-    sse_url=settings.mcp_gateway_sse_url,
-    auth_token=settings.mcp_gateway_auth_token,
+    sse_url=settings.agent.mcp_sse_url,
+    auth_token=settings.agent.mcp_auth_token,
 )
 mcp_gateway.register_mcp_server()
 
