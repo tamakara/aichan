@@ -13,7 +13,6 @@ def create_app() -> FastAPI:
     outbound_client = OutboundClient(
         agent_service_url=settings.hub.agent_url,
         qq_adapter_api_url=settings.hub.qq_adapter_url,
-        agent_max_turns=settings.hub.max_turns,
     )
     hub_pipeline_service = HubPipelineService(
         reminder_service=reminder_service,

@@ -46,12 +46,15 @@ class HubPipelineService:
             raw_event=raw_event,
         )
 
-        reply = await self._outbound_service.call_agent(user_message=content)
+        reply = await self._outbound_service.call_agent(
+            session_id=session_id,
+            user_message=content,
+        )
         await self._outbound_service.send_reply(session_id=session_id, content=reply)
 
 
 class OutboundServiceProtocol:
-    async def call_agent(self, user_message: str) -> str:  # pragma: no cover
+    async def call_agent(self, session_id: str, user_message: str) -> str:  # pragma: no cover
         raise NotImplementedError
 
     async def send_reply(self, session_id: str, content: str) -> None:  # pragma: no cover

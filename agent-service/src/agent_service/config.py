@@ -18,6 +18,7 @@ class ServerSettings:
 @dataclass(frozen=True)
 class AgentSettings:
     model: str
+    max_turns: int
     openai_api_key: str
     openai_base_url: str
     mcp_sse_url: str
@@ -81,6 +82,7 @@ def get_settings() -> Settings:
         ),
         agent=AgentSettings(
             model=_require_str(agent, "model"),
+            max_turns=_require_int(agent, "max_turns"),
             openai_api_key=_require_str(agent, "openai_api_key"),
             openai_base_url=_require_str(agent, "openai_base_url"),
             mcp_sse_url=_require_str(agent, "mcp_sse_url"),

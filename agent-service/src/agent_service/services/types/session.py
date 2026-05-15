@@ -1,10 +1,11 @@
 from typing import List, cast
 
-from .types import Message, ToolCall
+from .llm import Message, ToolCall
 
 
-class MessageList:
-    def __init__(self):
+class Session:
+    def __init__(self, session_id: str):
+        self._session_id: str = session_id
         self._messages: List[Message] = []
 
     def add_message(
@@ -24,3 +25,6 @@ class MessageList:
 
     def get_messages(self) -> List[Message]:
         return self._messages
+
+    def get_session_id(self) -> str:
+        return self._session_id

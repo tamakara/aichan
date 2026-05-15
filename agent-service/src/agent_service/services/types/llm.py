@@ -9,7 +9,6 @@ from pydantic import BaseModel
 type Message = ChatCompletionMessageParam
 type ToolCall = ChatCompletionMessageFunctionToolCall
 
-
 class LlmResponse(BaseModel):
     content: str
     tool_calls: List[ToolCall]

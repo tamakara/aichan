@@ -10,8 +10,8 @@ class StubOutboundSuccess:
         self.agent_calls: list[str] = []
         self.reply_calls: list[tuple[str, str]] = []
 
-    async def call_agent(self, user_message: str) -> str:
-        self.agent_calls.append(user_message)
+    async def call_agent(self, session_id: str, user_message: str) -> str:
+        self.agent_calls.append(f"{session_id}:{user_message}")
         return f"reply:{user_message}"
 
     async def send_reply(self, session_id: str, content: str) -> None:
@@ -19,7 +19,7 @@ class StubOutboundSuccess:
 
 
 class StubOutboundAgentFail(StubOutboundSuccess):
-    async def call_agent(self, user_message: str) -> str:
+    async def call_agent(self, session_id: str, user_message: str) -> str:
         raise RuntimeError("agent failed")
 
 
@@ -45,7 +45,7 @@ def test_private_event_adds_reminder_and_sends_reply() -> None:
     reminders = reminder_service.list_reminders("qq_1")
     assert len(reminders) == 1
     assert reminders[0].content == "hello"
-    assert outbound.agent_calls == ["hello"]
+    assert outbound.agent_calls == ["private_1:hello"]
     assert outbound.reply_calls == [("private_1", "reply:hello")]
 
 

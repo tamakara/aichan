@@ -26,7 +26,7 @@
 
 - `agent-service`
   - `POST /chat`
-  - request: `{"user_message":"...","max_turns":10}`
+  - request: `{"session_id":"private_xxx","user_message":"..."}`
   - response: `{"reply":"..."}`
 
 - `qq-adapter-service`
@@ -47,7 +47,6 @@ server:
 hub:
   agent_url: http://agent-service:8000
   qq_adapter_url: http://qq-adapter-service:8010
-  max_turns: 10
 ```
 
 ## 启动

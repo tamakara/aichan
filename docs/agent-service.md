@@ -19,10 +19,17 @@
 
 ```json
 {
-  "user_input": "你好",
-  "max_turns": 10
+  "session_id": "private_123",
+  "user_message": "你好"
 }
 ```
+
+`max_turns` 由服务配置 `agent-service/config.yml` 中的 `agent.max_turns` 统一控制，不再支持按请求覆盖。
+
+`session_id` 语义：
+
+- 相同 `session_id` 的请求会被串行执行，保证同一会话上下文不会被并发写坏。
+- 不同 `session_id` 的请求可并行执行，提升多会话吞吐。
 
 ## 配置文件
 
@@ -36,6 +43,7 @@ server:
 
 agent:
   model: gpt-5.5
+  max_turns: 10
   openai_api_key: your_openai_api_key
   openai_base_url: https://api.openai.com/v1
   mcp_sse_url: http://mcp-gateway:9000/sse

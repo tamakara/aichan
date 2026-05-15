@@ -12,15 +12,16 @@ class OutboundClient:
         self,
         agent_service_url: str,
         qq_adapter_api_url: str,
-        agent_max_turns: int,
     ) -> None:
         self._agent_service_url = agent_service_url.rstrip("/")
         self._qq_adapter_api_url = qq_adapter_api_url.rstrip("/")
-        self._agent_max_turns = agent_max_turns
         self._client = httpx.AsyncClient(timeout=None)
 
-    async def call_agent(self, user_message: str) -> str:
-        payload = AgentChatRequest(user_message=user_message, max_turns=self._agent_max_turns)
+    async def call_agent(self, session_id: str, user_message: str) -> str:
+        payload = AgentChatRequest(
+            session_id=session_id,
+            user_message=user_message,
+        )
         data = await self._post_json(f"{self._agent_service_url}/chat", payload.model_dump())
         response = AgentChatResponse.model_validate(data)
         return response.reply

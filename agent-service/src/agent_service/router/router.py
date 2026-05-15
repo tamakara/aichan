@@ -1,12 +1,16 @@
-from ..agent import AgentCore
-
-from .schemas import ChatRequest, ChatResponse, HealthResponse
 from threading import Lock
 
 from fastapi import APIRouter, HTTPException
 
+from ..services import AgentCore, Session
+from .schemas import ChatRequest, ChatResponse, HealthResponse
 
-def create_router(agent: AgentCore, agent_lock: Lock) -> APIRouter:
+
+def create_router(
+    agent: AgentCore,
+    session_contexts: dict[str, tuple[Session, Lock]],
+    registry_lock: Lock,
+) -> APIRouter:
     # 每次装配时创建独立路由对象，避免测试或重复初始化时重复注册同一路由。
     router = APIRouter()
 
@@ -16,10 +20,25 @@ def create_router(agent: AgentCore, agent_lock: Lock) -> APIRouter:
 
     @router.post("/chat", response_model=ChatResponse)
     def chat(req: ChatRequest) -> ChatResponse:
+
         try:
-            # AgentCore 维护单进程内存态上下文；这里串行化请求，避免并发写入导致会话状态错乱。
-            with agent_lock:
-                reply = agent.chat(user_message=req.user_message, max_turns=req.max_turns)
+            # 注册表只负责“首次创建”，锁粒度很小；
+            # 实际串行控制仍在会话级锁上，不会把不同 session 串在一起。
+            with registry_lock:
+                context = session_contexts.get(req.session_id)
+                if context is None:
+                    context = (Session(session_id=req.session_id), Lock())
+                    session_contexts[req.session_id] = context
+
+            session, session_lock = context
+
+            # 同一会话必须串行，避免并发写同一段消息历史导致上下文错乱；
+            # 不同会话拥有各自独立锁，因此可以并行执行。
+            with session_lock:
+                reply = agent.run(
+                    session=session,
+                    user_message=req.user_message,
+                )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return ChatResponse(reply=reply)

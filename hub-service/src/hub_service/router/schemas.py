@@ -26,8 +26,8 @@ class ReminderItem(BaseModel):
 
 
 class AgentChatRequest(BaseModel):
+    session_id: str = Field(min_length=1)
     user_message: str = Field(min_length=1)
-    max_turns: int = Field(ge=1, le=50)
 
 
 class AgentChatResponse(BaseModel):

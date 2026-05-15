@@ -1,30 +1,30 @@
 import json
 
 from .llm_client import LlmClient
-from .messages_list import MessageList
 from .mcp_gateway import McpGateway
+from .types.session import Session
 
 
 class AgentCore:
     def __init__(
         self,
         llm_client: LlmClient,
-        messages_list: MessageList,
         mcp_gateway: McpGateway,
+        max_turns: int,
     ):
         self._llm_client = llm_client
-        self._messages_list = messages_list
         self._mcp_gateway = mcp_gateway
+        self._max_turns = max_turns
 
-    def chat(self, user_message: str, max_turns: int = 10) -> str:
-        self._messages_list.add_message(role="user", content=user_message)
+    def run(self, session: Session, user_message: str) -> str:
+        session.add_message(role="user", content=user_message)
 
-        for _ in range(max_turns):
+        for _ in range(self._max_turns):
             llm_response = self._llm_client.generate(
-                messages=self._messages_list.get_messages(),
+                messages=session.get_messages(),
                 tools_schema=self._mcp_gateway.get_tools_schema(),
             )
-            self._messages_list.add_message(
+            session.add_message(
                 role="assistant",
                 content=llm_response.content,
                 tool_calls=llm_response.tool_calls,
@@ -57,10 +57,10 @@ class AgentCore:
                         ensure_ascii=False,
                     )
 
-                self._messages_list.add_message(
+                session.add_message(
                     role="tool", content=tool_call_result, tool_call_id=tool_call_id
                 )
 
         raise RuntimeError(
-            f"Agent failed to complete the task within {max_turns} turns of interaction."
+            f"Agent failed to complete the task within {self._max_turns} turns of interaction."
         )

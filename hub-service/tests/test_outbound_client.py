@@ -42,7 +42,6 @@ def test_call_agent_and_send_reply_success() -> None:
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
         qq_adapter_api_url="http://qq-adapter-service:8010",
-        agent_max_turns=10,
     )
     client._client = DummyHttpClient(
         [
@@ -51,7 +50,7 @@ def test_call_agent_and_send_reply_success() -> None:
         ]
     )  # type: ignore[attr-defined]
 
-    reply = asyncio.run(client.call_agent("hello"))
+    reply = asyncio.run(client.call_agent("private_1", "hello"))
     assert reply == "ok"
 
     asyncio.run(client.send_reply("private_1", "ok"))
@@ -61,9 +60,8 @@ def test_call_agent_invalid_response_raises() -> None:
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
         qq_adapter_api_url="http://qq-adapter-service:8010",
-        agent_max_turns=10,
     )
     client._client = DummyHttpClient([DummyResponse({"bad": "shape"})])  # type: ignore[attr-defined]
 
     with pytest.raises(Exception):
-        asyncio.run(client.call_agent("hello"))
+        asyncio.run(client.call_agent("private_1", "hello"))

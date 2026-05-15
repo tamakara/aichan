@@ -19,7 +19,6 @@ class ServerSettings:
 class HubSettings:
     agent_url: str
     qq_adapter_url: str
-    max_turns: int
 
 
 @dataclass(frozen=True)
@@ -74,6 +73,5 @@ def get_settings() -> Settings:
         hub=HubSettings(
             agent_url=_require_str(hub, "agent_url"),
             qq_adapter_url=_require_str(hub, "qq_adapter_url"),
-            max_turns=_require_int(hub, "max_turns"),
         ),
     )
