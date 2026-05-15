@@ -5,6 +5,7 @@
 ## 模块结构
 
 - `agent_service/main.py`：模块根目录唯一启动入口。
+- `agent_service/logger.py`：全局日志配置与统一 logger 获取入口。
 - `agent_service/router/`：仅负责 HTTP 路由与请求/响应 Schema。
 - `agent_service/app.py`：负责应用组装编排（AgentCore、依赖注入、FastAPI 应用拼装）。
 - `agent_service/agent/`：核心 Agent 逻辑，不直接承担 HTTP 服务装配职责。
@@ -34,6 +35,15 @@
 错误诊断：
 
 - `/chat` 处理失败时会输出完整异常栈日志，并携带 `session_id`，用于快速定位会话级故障。
+
+运行日志：
+
+- 启动阶段会输出 `agent_app.boot/agent_app.ready`，用于确认模型、`max_turns`、MCP 地址与会话并发策略。
+- 请求阶段会输出 `agent.chat_received/agent.session_bound/agent.chat_completed/agent.chat_failed`，用于定位会话请求全链路耗时。
+- 核心执行会输出 `agent_core.run_started/agent_core.llm_responded/agent_core.tool_called/agent_core.run_completed`，用于观察每轮推理与工具调用行为。
+- MCP 网关会输出 `mcp.registered/mcp.tool_called`，用于排查工具注册与调用耗时。
+- 工具 schema 会在注册阶段执行兼容性清洗（当前仅移除已观测触发 400 的 `propertyNames` 字段），并输出 `mcp.schema_sanitized` 日志。
+- LLM 调用失败时会输出 `llm.request_failed`，并带上游响应体（status/detail），用于快速定位模型兼容性或参数问题。
 
 ## 配置文件
 

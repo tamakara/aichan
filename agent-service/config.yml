@@ -4,7 +4,7 @@ server:
   log_level: debug
 
 agent:
-  model: gpt-5.5
+  model: gemini-3.1-flash-lite
   max_turns: 50
   openai_api_key: sk-OW7I4noqtV3tB8uPC35f410e453c4fB7BfC0FbD2AcF64650
   openai_base_url: https://api.v3.cm/v1

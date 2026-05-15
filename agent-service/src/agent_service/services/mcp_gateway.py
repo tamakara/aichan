@@ -8,6 +8,8 @@ import mcp.types as mcp_types
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 
+from ..logger import elapsed_ms, get_logger, log_info, log_warning, start_timer
+
 
 @dataclass(frozen=True)
 class McpToolBinding:
@@ -17,13 +19,19 @@ class McpToolBinding:
 
 
 class McpGateway:
+    # 当前只针对已观测到的兼容性报错做最小修复：
+    # OpenAI 兼容网关在 tools schema 中不接受 propertyNames。
+    _UNSUPPORTED_SCHEMA_KEYS = {"propertyNames"}
+
     def __init__(self, sse_url: str, auth_token: str | None = None):
+        self._logger = get_logger("mcp_gateway")
         self._sse_url = sse_url
         self._auth_token = auth_token
         self._mcp_tools: Dict[str, McpToolBinding] = {}
         self._tools_schema: List[Dict[str, Any]] = []
 
     def register_mcp_server(self) -> None:
+        started_at = start_timer()
         try:
             remote_tools = anyio.run(self._list_mcp_tools_async)
         except Exception as exc:
@@ -34,14 +42,24 @@ class McpGateway:
             self._mcp_tools[remote_tool.name] = McpToolBinding(
                 remote_name=remote_tool.name,
                 description=remote_tool.description or "MCP tool from SSE Gateway",
-                input_schema=self._normalize_schema(remote_tool.inputSchema),
+                input_schema=self._normalize_schema(
+                    schema=remote_tool.inputSchema,
+                    tool_name=remote_tool.name,
+                ),
             )
         self._refresh_tools_schema()
+        log_info(
+            self._logger,
+            "mcp.registered",
+            tool_count=len(remote_tools),
+            elapsed_ms=elapsed_ms(started_at),
+        )
 
     def get_tools_schema(self) -> List[Dict[str, Any]]:
         return self._tools_schema
 
     def call_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+        started_at = start_timer()
         binding = self._mcp_tools.get(tool_name)
         if binding is None:
             raise KeyError(f"未找到工具: {tool_name}")
@@ -54,6 +72,13 @@ class McpGateway:
             )
         except Exception as exc:
             raise RuntimeError(f"调用 MCP SSE 工具失败: {exc}") from exc
+
+        log_info(
+            self._logger,
+            "mcp.tool_called",
+            tool_name=tool_name,
+            elapsed_ms=elapsed_ms(started_at),
+        )
 
         return json.dumps(
             result.model_dump(by_alias=True, mode="json", exclude_none=True),
@@ -97,13 +122,50 @@ class McpGateway:
                 await session.initialize()
                 yield session
 
-    @staticmethod
-    def _normalize_schema(schema: Any) -> Dict[str, Any]:
+    def _normalize_schema(self, schema: Any, tool_name: str) -> Dict[str, Any]:
         if not isinstance(schema, dict):
             return {"type": "object", "properties": {}}
+
         out = dict(schema)
         if "type" not in out:
             out["type"] = "object"
         if out["type"] == "object" and "properties" not in out:
             out["properties"] = {}
-        return out
+
+        cleaned, removed_keys = self._sanitize_schema_node(out)
+        if removed_keys:
+            log_warning(
+                self._logger,
+                "mcp.schema_sanitized",
+                tool_name=tool_name,
+                removed_keys=",".join(sorted(set(removed_keys))),
+            )
+
+        return cleaned
+
+    def _sanitize_schema_node(self, node: Any) -> tuple[Any, list[str]]:
+        removed_keys: list[str] = []
+
+        if isinstance(node, dict):
+            cleaned: Dict[str, Any] = {}
+            for key, value in node.items():
+                if key in self._UNSUPPORTED_SCHEMA_KEYS:
+                    removed_keys.append(key)
+                    continue
+
+                cleaned_value, child_removed = self._sanitize_schema_node(value)
+                cleaned[key] = cleaned_value
+                removed_keys.extend(child_removed)
+
+            return cleaned, removed_keys
+
+        if isinstance(node, list):
+            cleaned_list: list[Any] = []
+            for item in node:
+                cleaned_item, child_removed = self._sanitize_schema_node(item)
+                cleaned_list.append(cleaned_item)
+                removed_keys.extend(child_removed)
+
+            return cleaned_list, removed_keys
+
+        return node, removed_keys

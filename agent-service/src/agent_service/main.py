@@ -2,10 +2,12 @@ import uvicorn
 
 from .app import app
 from .config import get_settings
+from .logger import configure_logging
 
 
 def main() -> None:
     settings = get_settings()
+    configure_logging(settings.server.log_level)
 
     uvicorn.run(
         app,

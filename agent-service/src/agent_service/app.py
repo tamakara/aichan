@@ -3,13 +3,22 @@ from threading import Lock
 from fastapi import FastAPI
 
 from .services import AgentCore, LlmClient, McpGateway, Session
-from .services.prompts import SYSTEM_PROMPT
 from .config import get_settings
+from .logger import get_logger, log_info
 from .router import create_router
 
 
 def create_app() -> FastAPI:
+    logger = get_logger("app")
     settings = get_settings()
+
+    log_info(
+        logger,
+        "agent_app.boot",
+        model=settings.agent.model,
+        max_turns=settings.agent.max_turns,
+        mcp_sse_url=settings.agent.mcp_sse_url,
+    )
 
     llm_client = LlmClient(
         model_name=settings.agent.model,
@@ -44,6 +53,8 @@ def create_app() -> FastAPI:
             registry_lock=session_registry_lock,
         )
     )
+
+    log_info(logger, "agent_app.ready", session_mode="per_session_serial")
 
     return app
 
