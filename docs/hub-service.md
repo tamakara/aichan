@@ -20,7 +20,7 @@
     - 记录提醒到内存（按 `user_id` 分桶）。
     - 调用 `agent-service /chat`，将提醒内容作为 `user_message`。
     - 将 agent 回复通过 `qq-adapter-service /api/v1/message/send` 回写 QQ。
-  - 当前策略：失败仅记录日志，不做重试。
+  - 当前策略：失败仅记录日志，不做重试；当下游返回非 2xx 时，日志会包含下游响应体以便快速定位根因。
 
 ## 下游依赖接口
 
@@ -62,3 +62,9 @@ Docker Compose 启动：
 ```bash
 docker compose up -d --build hub-service
 ```
+
+## 容器构建稳定性
+
+- Dockerfile 改为在基础镜像内通过 `pip install uv==0.7.2` 安装 uv，避免依赖 `ghcr.io` 元数据拉取失败。
+- `hub-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
+- `uv pip install --system .` 使用 3 次重试策略，针对 `uv_build` 元数据拉取偶发超时可自动恢复。

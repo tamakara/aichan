@@ -35,7 +35,11 @@ class OutboundClient:
 
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = await self._client.post(url, json=payload)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            # 下游非 2xx 时保留响应体，避免只看到状态码而丢失关键错误上下文。
+            raise RuntimeError(
+                f"downstream http error: url={url} status={response.status_code} body={response.text}"
+            )
         data = response.json()
 
         if not isinstance(data, dict):

@@ -31,6 +31,10 @@
 - 相同 `session_id` 的请求会被串行执行，保证同一会话上下文不会被并发写坏。
 - 不同 `session_id` 的请求可并行执行，提升多会话吞吐。
 
+错误诊断：
+
+- `/chat` 处理失败时会输出完整异常栈日志，并携带 `session_id`，用于快速定位会话级故障。
+
 ## 配置文件
 
 配置文件路径：`agent-service/config.yml`
@@ -65,3 +69,9 @@ uv run --package agent-service agent-service
 ```bash
 agent-service
 ```
+
+## 容器构建稳定性
+
+- Dockerfile 改为在基础镜像内通过 `pip install uv==0.7.2` 安装 uv，避免依赖 `ghcr.io` 元数据拉取失败。
+- `agent-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
+- `uv pip install --system .` 使用 3 次重试策略，针对 `uv_build` 元数据拉取偶发超时可自动恢复。
