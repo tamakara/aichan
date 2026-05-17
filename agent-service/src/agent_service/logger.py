@@ -6,12 +6,12 @@ from typing import Any
 LOGGER_NAME_PREFIX = "agent_service"
 
 
-def configure_logging(log_level: str) -> None:
-    level = getattr(logging, log_level.upper(), logging.INFO)
+def configure_logging() -> None:
     logging.basicConfig(
-        level=level,
+        level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
+    _silence_framework_loggers()
 
 
 def get_logger(component: str) -> logging.Logger:
@@ -55,3 +55,13 @@ def _format_field_value(value: Any) -> str:
     if value is None:
         return "null"
     return str(value).replace("\n", "\\n")
+
+
+def _silence_framework_loggers() -> None:
+    # 运行时日志统一收口到 agent_service.*，屏蔽 FastAPI/Uvicorn 框架噪声避免污染诊断信号。
+    framework_loggers = ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi")
+    for logger_name in framework_loggers:
+        framework_logger = logging.getLogger(logger_name)
+        framework_logger.handlers.clear()
+        framework_logger.propagate = False
+        framework_logger.setLevel(logging.CRITICAL + 1)

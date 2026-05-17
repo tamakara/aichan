@@ -7,13 +7,15 @@ from .logger import configure_logging
 
 def main() -> None:
     settings = get_settings()
-    configure_logging(settings.server.log_level)
+    configure_logging()
 
     uvicorn.run(
         app,
         host=settings.server.host,
         port=settings.server.port,
-        log_level=settings.server.log_level,
+        log_level="critical",
+        access_log=False,
+        log_config=None,
     )
 
 

@@ -54,7 +54,10 @@ def create_app() -> FastAPI:
         )
     )
 
-    log_info(logger, "agent_app.ready", session_mode="per_session_serial")
+    @app.on_event("startup")
+    async def on_startup() -> None:
+        # ready 日志放在 startup 事件中，确保只在服务进入可接流量阶段后输出。
+        log_info(logger, "agent_app.ready", session_mode="per_session_serial")
 
     return app
 

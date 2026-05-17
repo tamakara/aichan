@@ -13,7 +13,6 @@ class ServerSettings(BaseModel):
 
     host: StrictStr
     port: StrictInt
-    log_level: StrictStr
 
 
 class AgentSettings(BaseModel):

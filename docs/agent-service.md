@@ -38,6 +38,7 @@
 
 运行日志：
 
+- 运行时已关闭 FastAPI/Uvicorn 框架日志，仅保留 `agent_service.*` 自定义日志，避免框架访问日志干扰诊断。
 - 启动阶段会输出 `agent_app.boot/agent_app.ready`，用于确认模型、`max_turns`、MCP 地址与会话并发策略。
 - 请求阶段会输出 `agent.chat_received/agent.session_bound/agent.chat_completed/agent.chat_failed`，用于定位会话请求全链路耗时。
 - 核心执行会输出 `agent_core.run_started/agent_core.llm_responded/agent_core.tool_called/agent_core.run_completed`，用于观察每轮推理与工具调用行为。
@@ -61,7 +62,6 @@
 server:
   host: 0.0.0.0
   port: 8000
-  log_level: debug
 
 agent:
   model: gpt-5.5
