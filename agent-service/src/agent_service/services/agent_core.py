@@ -18,11 +18,13 @@ class AgentCore:
         llm_client: LlmClient,
         mcp_gateway: McpGateway,
         max_turns: int,
+        temperature: float,
     ):
         self._logger = get_logger("agent_core")
         self._llm_client = llm_client
         self._mcp_gateway = mcp_gateway
         self._max_turns = max_turns
+        self._temperature = temperature
 
     def run(self, session: Session, user_message: str) -> str:
         run_started_at = start_timer()
@@ -42,6 +44,7 @@ class AgentCore:
             llm_response = self._llm_client.generate(
                 messages=session.get_messages(),
                 tools_schema=self._mcp_gateway.get_tools_schema(),
+                temperature=self._temperature,
             )
             log_info(
                 self._logger,

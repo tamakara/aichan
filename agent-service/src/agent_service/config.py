@@ -20,6 +20,8 @@ class AgentSettings(BaseModel):
 
     model: StrictStr
     max_turns: StrictInt
+    temperature: float
+
     openai_api_key: StrictStr
     openai_base_url: StrictStr
     mcp_sse_url: StrictStr

@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
         llm_client=llm_client,
         mcp_gateway=mcp_gateway,
         max_turns=settings.agent.max_turns,
+        temperature=settings.agent.temperature,
     )
 
     app = FastAPI(

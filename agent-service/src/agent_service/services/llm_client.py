@@ -24,6 +24,8 @@ class LlmClient:
                 "messages": messages,
                 "model": self._model_name,
                 "temperature": temperature,
+                "tool_choice": "auto",
+                "tools": tools_schema,
             }
 
             response = self._client.chat.completions.create(**request_payload)
