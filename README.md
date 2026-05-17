@@ -1,6 +1,6 @@
 # AIChan
 
-基于 `uv workspace` 的多包项目，当前包含 `agent-service`、`qq-adapter-service` 与 `hub-service` 三个核心服务。
+基于 `uv workspace` 的多包项目，当前包含 `agent-service`、`adapter-service` 与 `hub-service` 三个核心服务。
 
 ## 目录结构
 
@@ -10,9 +10,8 @@
 ├─ uv.lock
 ├─ docker-compose.yml
 ├─ docs/
-│  ├─ configuration.md
 │  ├─ agent-service.md
-│  ├─ qq-adapter-service.md
+│  ├─ adapter-service.md
 │  └─ hub-service.md
 ├─ agent-service/
 │  ├─ pyproject.toml
@@ -24,11 +23,11 @@
 │  ├─ config.yml
 │  ├─ Dockerfile
 │  └─ src/hub_service
-└─ qq-adapter-service/
+└─ adapter-service/
    ├─ pyproject.toml
    ├─ config.yml
    ├─ Dockerfile
-   └─ src/qq_adapter_service
+   └─ src/adapter_service
 ```
 
 ## 配置
@@ -47,7 +46,7 @@ uv sync --all-packages
 
 ```bash
 uv run --package agent-service agent-service
-uv run --package qq-adapter-service qq-adapter-service
+uv run --package adapter-service adapter-service
 uv run --package hub-service hub-service
 ```
 
@@ -59,7 +58,6 @@ docker compose up -d --build
 
 ## 子模块文档
 
-- `docs/configuration.md`
 - `docs/agent-service.md`
-- `docs/qq-adapter-service.md`
+- `docs/adapter-service.md`
 - `docs/hub-service.md`

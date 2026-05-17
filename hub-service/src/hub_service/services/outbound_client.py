@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -11,10 +11,10 @@ class OutboundClient:
     def __init__(
         self,
         agent_service_url: str,
-        qq_adapter_api_url: str,
+        adapter_api_url: str,
     ) -> None:
         self._agent_service_url = agent_service_url.rstrip("/")
-        self._qq_adapter_api_url = qq_adapter_api_url.rstrip("/")
+        self._adapter_api_url = adapter_api_url.rstrip("/")
         self._client = httpx.AsyncClient(timeout=None)
 
     async def call_agent(self, session_id: str, user_message: str) -> str:
@@ -28,10 +28,10 @@ class OutboundClient:
 
     async def send_reply(self, session_id: str, content: str) -> None:
         payload = SendMessageRequest(session_id=session_id, content=content)
-        data = await self._post_json(f"{self._qq_adapter_api_url}/api/v1/message/send", payload.model_dump())
+        data = await self._post_json(f"{self._adapter_api_url}/api/v1/message/send", payload.model_dump())
         parsed = SendMessageResponse.model_validate(data)
         if not parsed.ok:
-            raise ValueError("qq-adapter send returned ok=false")
+            raise ValueError("adapter send returned ok=false")
 
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = await self._client.post(url, json=payload)

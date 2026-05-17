@@ -20,7 +20,7 @@ class HubSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     agent_url: StrictStr
-    qq_adapter_url: StrictStr
+    adapter_url: StrictStr
 
 
 class Settings(BaseModel):

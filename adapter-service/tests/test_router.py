@@ -1,7 +1,7 @@
-﻿from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient
 
-from qq_adapter_service.router.router import create_router
-from qq_adapter_service.services.connection_state import NapcatConnectionState
+from adapter_service.router.router import create_router
+from adapter_service.services.connection_state import NapcatConnectionState
 
 
 class StubAdapterService:

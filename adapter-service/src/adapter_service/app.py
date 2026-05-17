@@ -27,7 +27,7 @@ def create_app() -> FastAPI:
 
 
     app = FastAPI(
-        title="qq-adapter-service",
+        title="adapter-service",
         version="0.1.0",
         description="WebSocket bridge filter for NapCat OneBot v11 and downstream module.",
     )

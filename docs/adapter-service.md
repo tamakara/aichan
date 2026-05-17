@@ -1,6 +1,6 @@
-# qq-adapter-service
+# adapter-service
 
-`qq-adapter-service` 是 AICHAN 的 QQ 协议过滤、桥接与 MCP 工具网关，负责：
+`adapter-service` 是 AICHAN 的 QQ 协议过滤、桥接与 MCP 工具网关，负责：
 - 在 OneBot v11 与下游 WebSocket 模块之间做实时双向转发。
 - 把 QQ 历史消息查询能力暴露为 MCP 工具，供 MCP Gateway/agent 调用。
 
@@ -12,8 +12,8 @@
 
 ## 通信拓扑
 
-- NapCat -> `qq-adapter-service`：反向 WebSocket，地址 `ws://qq-adapter-service:8010/napcat/ws`
-- `qq-adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `adapter.downstream_ws_url` 指定
+- NapCat -> `adapter-service`：反向 WebSocket，地址 `ws://adapter-service:8010/napcat/ws`
+- `adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `adapter.downstream_ws_url` 指定
 
 ## 路由契约
 
@@ -69,13 +69,13 @@
 
 ## 配置文件
 
-配置文件路径：`qq-adapter-service/config.yml`
+配置文件路径：`adapter-service/config.yml`
 
 配置约束（与当前代码一致）：
 
 - 仅从本服务目录内的 `config.yml` 读取运行配置。
 - 不读取 `.env`、`.env.example`，也不支持任何环境变量别名。
-- 修改接口地址、端口、超时等参数时，只更新 `qq-adapter-service/config.yml`。
+- 修改接口地址、端口、超时等参数时，只更新 `adapter-service/config.yml`。
 - 在 Docker Compose 中通过只读挂载该配置文件，保证容器与本地运行共享同一配置语义。
 - 配置加载阶段使用 Pydantic 严格校验：字段类型不匹配、缺失字段或出现未声明字段都会直接报错并阻断启动。
 
@@ -93,7 +93,7 @@ adapter:
   onebot_ws_action_timeout_seconds: 5
 
 mcp:
-  base_url: http://qq-adapter-service:8010
+  base_url: http://adapter-service:8010
   timeout_seconds: 5
   log_level: debug
 ```
@@ -105,32 +105,32 @@ mcp:
 在仓库根目录执行：
 
 ```bash
-uv run --package qq-adapter-service qq-adapter-service
+uv run --package adapter-service adapter-service
 ```
 
 MCP stdio 入口（供 MCP Gateway 通过 `docker://` 拉起）：
 
 ```bash
-uv run --package qq-adapter-service qq-adapter-mcp
+uv run --package adapter-service adapter-mcp
 ```
 
 Docker Compose 启动：
 
 ```bash
-docker compose up -d --build qq-adapter-service
+docker compose up -d --build adapter-service
 ```
 
 ## 容器构建稳定性
 
 - Dockerfile 改为在基础镜像内通过 `pip install uv==0.7.2` 安装 uv，避免依赖 `ghcr.io` 元数据拉取失败。
-- `qq-adapter-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
+- `adapter-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
 - `uv pip install --system .` 使用 3 次重试策略，针对 `uv_build` 元数据拉取偶发超时可自动恢复。
 
 ## MCP Gateway 接入
 
-- Gateway 服务参数中增加 `docker://qq-adapter-service:latest`。
-- `qq-adapter-service` 容器镜像默认入口为 `qq-adapter-mcp`（stdio MCP server）。
-- Compose 中通过 `command: ["qq-adapter-service"]` 显式覆盖，保证业务 HTTP 服务与 MCP 工具容器职责分离。
+- Gateway 服务参数中增加 `docker://adapter-service:latest`。
+- `adapter-service` 容器镜像默认入口为 `adapter-mcp`（stdio MCP server）。
+- Compose 中通过 `command: ["adapter-service"]` 显式覆盖，保证业务 HTTP 服务与 MCP 工具容器职责分离。
 
 ## NapCat 手动对接
 
@@ -146,7 +146,7 @@ curl http://localhost:8010/healthz
 
 2. 登录外部 NapCat WebUI，在网络配置中手工新建 `WebSocket Client`：
    - `name`: `aichan-adapter-rws`
-   - `url`: `ws://qq-adapter-service:8010/napcat/ws`
+   - `url`: `ws://adapter-service:8010/napcat/ws`
    - `messagePostFormat`: `array`
    - `enable`: `true`
 

@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from qq_adapter_service.mcp.client import QqAdapterClient
+from adapter_service.mcp.client import AdapterClient
 
 
 def test_get_message_history_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,10 +32,10 @@ def test_get_message_history_success(monkeypatch: pytest.MonkeyPatch) -> None:
         async def get(self, path, params=None):
             return FakeResponse()
 
-    monkeypatch.setattr("qq_adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
 
     async def run() -> None:
-        client = QqAdapterClient("http://adapter", 5)
+        client = AdapterClient("http://adapter", 5)
         data = await client.get_message_history("private_1", 20, None)
         assert data["session_id"] == "private_1"
         assert data["messages"][0]["message_id"] == 1
@@ -64,10 +64,10 @@ def test_get_message_history_http_error_with_detail(monkeypatch: pytest.MonkeyPa
         async def get(self, path, params=None):
             raise httpx.HTTPStatusError("bad request", request=request, response=response)
 
-    monkeypatch.setattr("qq_adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
 
     async def run() -> None:
-        client = QqAdapterClient("http://adapter", 5)
+        client = AdapterClient("http://adapter", 5)
         with pytest.raises(RuntimeError, match="status=422"):
             await client.get_message_history("private_1", 20, None)
 

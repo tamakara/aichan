@@ -1,6 +1,6 @@
-﻿import pytest
+import pytest
 
-from qq_adapter_service.services.adapter_service import AdapterService
+from adapter_service.services.adapter_service import AdapterService
 
 
 @pytest.fixture

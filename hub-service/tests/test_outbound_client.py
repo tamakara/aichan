@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 
 import pytest
 
@@ -41,7 +41,7 @@ class DummyHttpClient:
 def test_call_agent_and_send_reply_success() -> None:
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
-        qq_adapter_api_url="http://qq-adapter-service:8010",
+        adapter_api_url="http://adapter-service:8010",
     )
     client._client = DummyHttpClient(
         [
@@ -59,7 +59,7 @@ def test_call_agent_and_send_reply_success() -> None:
 def test_call_agent_invalid_response_raises() -> None:
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
-        qq_adapter_api_url="http://qq-adapter-service:8010",
+        adapter_api_url="http://adapter-service:8010",
     )
     client._client = DummyHttpClient([DummyResponse({"bad": "shape"})])  # type: ignore[attr-defined]
 

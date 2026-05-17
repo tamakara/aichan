@@ -7,7 +7,7 @@ members = [
     "agent-service",
     "aichan",
     "hub-service",
-    "qq-adapter-service",
+    "adapter-service",
 ]
 
 [[package]]
@@ -1075,9 +1075,9 @@ wheels = [
 ]
 
 [[package]]
-name = "qq-adapter-service"
+name = "adapter-service"
 version = "0.1.0"
-source = { editable = "qq-adapter-service" }
+source = { editable = "adapter-service" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },

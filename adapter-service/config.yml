@@ -11,6 +11,6 @@ adapter:
   onebot_ws_action_timeout_seconds: 5
 
 mcp:
-  base_url: http://qq-adapter-service:8010
+  base_url: http://adapter-service:8010
   timeout_seconds: 5
   log_level: debug

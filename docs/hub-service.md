@@ -1,6 +1,6 @@
 # hub-service
 
-`hub-service` 是 AICHAN 的提醒中枢，负责接收 `qq-adapter-service` 推送的 QQ 私聊提醒，触发 `agent-service` 生成回复，并将回复回写到 `qq-adapter-service`。
+`hub-service` 是 AICHAN 的提醒中枢，负责接收 `adapter-service` 推送的 QQ 私聊提醒，触发 `agent-service` 生成回复，并将回复回写到 `adapter-service`。
 
 ## 设计目标
 
@@ -14,12 +14,12 @@
   - 返回：`{"status":"ok"}`
 
 - `WS /qq/events`
-  - 入参：`qq-adapter-service` 转发的过滤事件 JSON。
+  - 入参：`adapter-service` 转发的过滤事件 JSON。
   - 处理：
     - 仅处理 `message_type=private`。
     - 记录提醒到内存（按 `user_id` 分桶）。
     - 调用 `agent-service /chat`，将提醒内容作为 `user_message`。
-    - 将 agent 回复通过 `qq-adapter-service /api/v1/message/send` 回写 QQ。
+    - 将 agent 回复通过 `adapter-service /api/v1/message/send` 回写 QQ。
   - 当前策略：失败仅记录日志，不做重试；当下游返回非 2xx 时，日志会包含下游响应体以便快速定位根因。
 
 ## 下游依赖接口
@@ -29,7 +29,7 @@
   - request: `{"session_id":"private_xxx","user_message":"..."}`
   - response: `{"reply":"..."}`
 
-- `qq-adapter-service`
+- `adapter-service`
   - `POST /api/v1/message/send`
   - request: `{"session_id":"private_xxx","content":"..."}`
   - response: `{"ok":true,"data":{...}}`
@@ -54,7 +54,7 @@ server:
 
 hub:
   agent_url: http://agent-service:8000
-  qq_adapter_url: http://qq-adapter-service:8010
+  adapter_url: http://adapter-service:8010
 ```
 
 ## 启动

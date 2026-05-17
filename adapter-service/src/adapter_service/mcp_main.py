@@ -3,19 +3,19 @@ import logging
 
 from mcp.server.fastmcp import FastMCP
 
-from .mcp.client import QqAdapterClient
+from .mcp.client import AdapterClient
 from .mcp.config import get_settings
 
 
 def create_server() -> FastMCP:
     settings = get_settings()
-    adapter_client = QqAdapterClient(
+    adapter_client = AdapterClient(
         base_url=settings.base_url,
         timeout_seconds=settings.timeout_seconds,
     )
 
     mcp = FastMCP(
-        name="qq-adapter-service",
+        name="adapter-service",
         instructions="Expose QQ message history as MCP tools for agents.",
     )
 

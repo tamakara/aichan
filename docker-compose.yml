@@ -5,7 +5,7 @@ services:
     command:
       - --transport=sse
       - --port=9000
-      - --servers=playwright,fetch,time,docker://qq-adapter-service:latest
+      - --servers=playwright,fetch,time,docker://adapter-service:latest
     ports:
       - "9000:9000"
     volumes:
@@ -22,18 +22,18 @@ services:
     ports:
       - "8000:8000"
 
-  qq-adapter-service:
-    image: qq-adapter-service:latest
+  adapter-service:
+    image: adapter-service:latest
     build:
-      context: ./qq-adapter-service
+      context: ./adapter-service
     restart: unless-stopped
     depends_on:
       hub-service:
         condition: service_started
     command:
-      - qq-adapter-service
+      - adapter-service
     volumes:
-      - ./qq-adapter-service/config.yml:/app/qq-adapter-service/config.yml:ro
+      - ./adapter-service/config.yml:/app/adapter-service/config.yml:ro
     ports:
       - "8010:8010"
 

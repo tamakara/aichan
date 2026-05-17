@@ -1,4 +1,4 @@
-from qq_adapter_service.mcp_main import create_server
+from adapter_service.mcp_main import create_server
 
 
 def test_create_server_has_history_tool() -> None:

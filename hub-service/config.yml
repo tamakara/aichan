@@ -5,4 +5,4 @@ server:
 
 hub:
   agent_url: http://agent-service:8000
-  qq_adapter_url: http://qq-adapter-service:8010
+  adapter_url: http://adapter-service:8010

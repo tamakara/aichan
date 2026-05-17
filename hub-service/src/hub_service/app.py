@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
     reminder_service = ReminderService()
     outbound_client = OutboundClient(
         agent_service_url=settings.hub.agent_url,
-        qq_adapter_api_url=settings.hub.qq_adapter_url,
+        adapter_api_url=settings.hub.adapter_url,
     )
     hub_pipeline_service = HubPipelineService(
         reminder_service=reminder_service,
@@ -22,7 +22,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="hub-service",
         version="0.1.0",
-        description="QQ reminder hub for triggering agent and replying via qq-adapter.",
+        description="QQ reminder hub for triggering agent and replying via adapter.",
     )
 
     app.include_router(create_router(hub_pipeline_service=hub_pipeline_service))
