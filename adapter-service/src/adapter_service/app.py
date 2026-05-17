@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="adapter-service",
         version="0.1.0",
-        description="Redis-stream QQ adapter for NapCat OneBot v11 and hub module.",
+        description="Redis-stream QQ adapter for OneBot v11 reverse websocket and hub module.",
     )
 
     app.include_router(

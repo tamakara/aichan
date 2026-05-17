@@ -34,19 +34,8 @@ class Settings(BaseModel):
 
 
 def _load_config() -> dict[str, Any]:
-    # 配置只允许从服务自己的 YAML 文件读取，避免运行态再从环境变量分叉出另一套来源。
-    try:
-        payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"配置文件不存在: {CONFIG_PATH}") from exc
-    except yaml.YAMLError as exc:
-        raise ValueError(f"配置文件格式错误: {CONFIG_PATH}") from exc
-
-    if payload is None:
-        return {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"配置文件顶层必须是 mapping: {CONFIG_PATH}")
-    return payload
+    payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    return payload or {}
 
 
 @lru_cache(maxsize=1)

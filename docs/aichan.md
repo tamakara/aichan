@@ -16,7 +16,7 @@ AICHAN 由三个核心服务组成：
 
 ### `adapter-service`
 
-- 接入外部 NapCat 反向 WebSocket。
+- 接入任意符合 OneBot v11 的外部实现（反向 WebSocket）。
 - 过滤并标准化 QQ 事件，写入 Redis `qq.events`。
 - 消费 Redis `qq.actions` 并通过 OneBot action 回写 QQ。
 - 提供 MCP 工具能力（如历史消息查询）供 `agent-service` 通过 MCP Gateway 调用。
@@ -38,7 +38,7 @@ AICHAN 由三个核心服务组成：
 
 ```mermaid
 flowchart LR
-    U[QQ 用户] --> N[NapCat / OneBot v11]
+    U[QQ 用户] --> N[OneBot v11 实现]
     N <-->|Reverse WS（事件 + 动作）| A[adapter-service]
     A -->|XADD qq.events| R[(Redis Streams)]
     R -->|XREADGROUP qq.events| H[hub-service]
@@ -70,7 +70,7 @@ flowchart TB
 
 ## 核心业务链路（私聊场景）
 
-1. 用户私聊消息进入 NapCat。
+1. 用户私聊消息进入 OneBot v11 实现。
 2. `adapter-service` 接收并过滤事件，写入 Redis `qq.events`。
 3. `hub-service` 消费事件并按会话调度，调用 `agent-service /chat` 请求生成回复。
 4. `agent-service` 基于 MCP Gateway 提供的工具信息进行工具决策，并在推理过程中按需调用 MCP 工具。

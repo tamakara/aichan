@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
         create_router(
             agent=agent,
             session_contexts=session_contexts,
-            registry_lock=session_registry_lock,
+            session_registry_lock=session_registry_lock,
         )
     )
 

@@ -17,7 +17,7 @@ class LlmClient:
         self,
         messages: List[Message],
         tools_schema: List,
-        temperature: float = 0.7,
+        temperature: float,
     ) -> LlmResponse:
         try:
             request_payload = {
@@ -25,11 +25,6 @@ class LlmClient:
                 "model": self._model_name,
                 "temperature": temperature,
             }
-            # 部分 OpenAI 兼容网关在 tools 为空时会拒绝 tool_choice 字段，
-            # 这里按是否存在工具动态下发参数，避免无工具场景触发 400。
-            if tools_schema:
-                request_payload["tool_choice"] = "auto"
-                request_payload["tools"] = tools_schema
 
             response = self._client.chat.completions.create(**request_payload)
 

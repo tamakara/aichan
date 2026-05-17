@@ -23,8 +23,8 @@ def create_router(
     async def healthz() -> HealthResponse:
         return HealthResponse()
 
-    @router.websocket("/napcat/ws")
-    async def napcat_ws(websocket: WebSocket) -> None:
+    @router.websocket("/onebot/v11/ws")
+    async def onebot_v11_ws(websocket: WebSocket) -> None:
         napcat_connection_state.set(websocket)
         try:
             await napcat_ws_gateway.handle_connection(websocket)
@@ -39,7 +39,7 @@ def create_router(
         if websocket is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="napcat ws is not connected",
+                detail="onebot reverse ws is not connected",
             )
 
         try:
@@ -52,7 +52,10 @@ def create_router(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         except TimeoutError as exc:
-            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="napcat ws action timeout") from exc
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="onebot reverse ws action timeout",
+            ) from exc
 
         return UserInfoResponse(ok=True, data=result)
 
@@ -66,7 +69,7 @@ def create_router(
         if websocket is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="napcat ws is not connected",
+                detail="onebot reverse ws is not connected",
             )
 
         try:
@@ -84,7 +87,10 @@ def create_router(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         except TimeoutError as exc:
-            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="napcat ws action timeout") from exc
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="onebot reverse ws action timeout",
+            ) from exc
 
         return MessageHistoryResponse(ok=True, data=data)
 

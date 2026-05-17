@@ -11,7 +11,7 @@ from .schemas import ChatRequest, ChatResponse, HealthResponse
 def create_router(
     agent: AgentCore,
     session_contexts: dict[str, tuple[Session, Lock]],
-    registry_lock: Lock,
+    session_registry_lock: Lock,
 ) -> APIRouter:
     # 每次装配时创建独立路由对象，避免测试或重复初始化时重复注册同一路由。
     router = APIRouter()
@@ -34,7 +34,7 @@ def create_router(
         try:
             # 注册表只负责“首次创建”，锁粒度很小；
             # 实际串行控制仍在会话级锁上，不会把不同 session 串在一起。
-            with registry_lock:
+            with session_registry_lock:
                 context = session_contexts.get(req.session_id)
                 created_new_session = False
                 if context is None:

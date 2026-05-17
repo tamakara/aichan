@@ -82,7 +82,7 @@ class ActionConsumerWorker:
 
         websocket = self._napcat_connection_state.get()
         if websocket is None:
-            raise RuntimeError("napcat ws is not connected")
+            raise RuntimeError("onebot reverse ws is not connected")
 
         outbound_action = self._adapter_service.build_send_message_action(
             session_id=action.session_id,
