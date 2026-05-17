@@ -36,11 +36,18 @@
 
 - `/chat` 处理失败时会输出完整异常栈日志，并携带 `session_id`，用于快速定位会话级故障。
 
+MCP 工具信息来源：
+
+- `agent-service` 不直接维护工具清单；工具信息由 MCP Gateway 提供。
+- 服务启动阶段会连接 `agent.mcp_sse_url`，通过 `list_tools` 拉取远端工具元数据（名称、描述、入参 schema）。
+- 拉取到的工具信息会在进程内固化为当前运行时工具映射，并转换为 LLM `tools` schema 供后续推理使用。
+
 运行日志：
 
 - 运行时已关闭 FastAPI/Uvicorn 框架日志，仅保留 `agent_service.*` 自定义日志，避免框架访问日志干扰诊断。
 - 日志输出采用“双轨格式”：前半段是中文可读摘要，后半段保留 `event=... key=value...` 结构化字段，兼顾人工阅读与机器检索。
 - 启动阶段会输出 `agent_app.boot/agent_app.ready`，用于确认模型、`max_turns`、MCP 地址与会话并发策略。
+- MCP 注册阶段会输出 `mcp.registered`，可用于确认 MCP Gateway 是否成功向 `agent-service` 提供工具信息。
 - 请求阶段会输出 `agent.chat_received/agent.session_bound/agent.chat_completed/agent.chat_failed`，用于定位会话请求全链路耗时。
 - 核心执行会输出 `agent_core.run_started/agent_core.llm_responded/agent_core.tool_called/agent_core.run_completed`，用于观察每轮推理与工具调用行为。
 - MCP 网关会输出 `mcp.registered/mcp.tool_called`，用于排查工具注册与调用耗时。
@@ -87,6 +94,21 @@ uv run --package agent-service agent-service
 
 ```bash
 agent-service
+```
+
+## 测试
+
+`agent-service` 已补充基础单元测试，覆盖路由会话管理与 `AgentCore` 推理/工具调用边界行为。
+
+测试文件：
+
+- `agent-service/tests/test_router.py`
+- `agent-service/tests/test_agent_core.py`
+
+在仓库根目录执行：
+
+```bash
+uv run --package agent-service --extra test pytest agent-service/tests -q
 ```
 
 ## 容器构建稳定性

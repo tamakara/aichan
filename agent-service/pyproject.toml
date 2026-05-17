@@ -16,6 +16,11 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.3.4",
+]
+
 [project.scripts]
 # 使用明确的服务名作为唯一入口，避免 `run` 这类通用命令名在容器/宿主机环境中语义不清。
 agent-service = "agent_service.main:main"

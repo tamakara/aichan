@@ -58,6 +58,7 @@ docker compose up -d --build
 
 ## 子模块文档
 
+- `docs/aichan.md`
 - `docs/agent-service.md`
 - `docs/adapter-service.md`
 - `docs/hub-service.md`

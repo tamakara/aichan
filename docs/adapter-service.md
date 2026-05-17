@@ -12,7 +12,7 @@
 
 ## 通信拓扑
 
-- NapCat -> `adapter-service`：反向 WebSocket，地址 `ws://adapter-service:8010/napcat/ws`
+- NapCat <-> `adapter-service`：单条反向 WebSocket，地址 `ws://adapter-service:8010/napcat/ws`，同一连接承载 OneBot 事件上行与 action 下发/响应
 - `adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `adapter.downstream_ws_url` 指定
 
 ## 路由契约
