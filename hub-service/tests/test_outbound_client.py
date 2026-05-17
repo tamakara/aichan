@@ -11,16 +11,6 @@ class DummyResponse:
         self.status_code = status_code
         self.text = str(payload)
 
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            from httpx import HTTPStatusError, Request
-
-            raise HTTPStatusError(
-                message="bad status",
-                request=Request("POST", "http://dummy"),
-                response=self,
-            )
-
     def json(self):
         return self._payload
 
@@ -38,28 +28,34 @@ class DummyHttpClient:
         return None
 
 
-def test_call_agent_and_send_reply_success() -> None:
+class StubRedisStream:
+    def __init__(self) -> None:
+        self.actions: list[tuple[str, str]] = []
+
+    async def enqueue_send_message(self, session_id: str, content: str) -> None:
+        self.actions.append((session_id, content))
+
+
+def test_call_agent_and_enqueue_action_success() -> None:
+    redis_stream = StubRedisStream()
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
-        adapter_api_url="http://adapter-service:8010",
+        redis_stream=redis_stream,  # type: ignore[arg-type]
     )
-    client._client = DummyHttpClient(
-        [
-            DummyResponse({"reply": "ok"}),
-            DummyResponse({"ok": True, "data": {"message_id": 1}}),
-        ]
-    )  # type: ignore[attr-defined]
+    client._client = DummyHttpClient([DummyResponse({"reply": "ok"})])  # type: ignore[attr-defined]
 
     reply = asyncio.run(client.call_agent("private_1", "hello"))
     assert reply == "ok"
 
     asyncio.run(client.send_reply("private_1", "ok"))
+    assert redis_stream.actions == [("private_1", "ok")]
 
 
 def test_call_agent_invalid_response_raises() -> None:
+    redis_stream = StubRedisStream()
     client = OutboundClient(
         agent_service_url="http://agent-service:8000",
-        adapter_api_url="http://adapter-service:8010",
+        redis_stream=redis_stream,  # type: ignore[arg-type]
     )
     client._client = DummyHttpClient([DummyResponse({"bad": "shape"})])  # type: ignore[attr-defined]
 

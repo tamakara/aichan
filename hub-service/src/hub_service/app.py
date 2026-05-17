@@ -2,34 +2,45 @@ from fastapi import FastAPI
 
 from .config import get_settings
 from .router import create_router
-from .services.outbound_client import OutboundClient
-from .services.reminder_service import HubPipelineService, ReminderService
+from .services import EventConsumerWorker, HubRedisStream, OutboundClient, SessionCoordinator
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    reminder_service = ReminderService()
+    redis_stream = HubRedisStream(settings.redis)
     outbound_client = OutboundClient(
         agent_service_url=settings.hub.agent_url,
-        adapter_api_url=settings.hub.adapter_url,
+        redis_stream=redis_stream,
     )
-    hub_pipeline_service = HubPipelineService(
-        reminder_service=reminder_service,
-        outbound_service=outbound_client,
+    session_coordinator = SessionCoordinator(
+        outbound_client=outbound_client,
+        debounce_seconds=settings.hub.debounce_seconds,
+    )
+    event_consumer = EventConsumerWorker(
+        redis_stream=redis_stream,
+        session_coordinator=session_coordinator,
     )
 
     app = FastAPI(
         title="hub-service",
         version="0.1.0",
-        description="QQ reminder hub for triggering agent and replying via adapter.",
+        description="QQ reminder hub driven by Redis streams.",
     )
 
-    app.include_router(create_router(hub_pipeline_service=hub_pipeline_service))
+    app.include_router(create_router())
+
+    @app.on_event("startup")
+    async def startup() -> None:
+        await redis_stream.startup()
+        await event_consumer.start()
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
+        await event_consumer.stop()
+        await session_coordinator.shutdown()
         await outbound_client.aclose()
+        await redis_stream.shutdown()
 
     return app
 

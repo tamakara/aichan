@@ -5,11 +5,6 @@ from adapter_service.services.connection_state import NapcatConnectionState
 
 
 class StubAdapterService:
-    def build_send_message_action(self, session_id, content):
-        if session_id == "bad":
-            raise ValueError("bad session")
-        return type("Action", (), {"action": "send_private_msg", "params": {"user_id": 1, "message": content}})()
-
     def build_get_user_info_action(self, abstract_user_id):
         if abstract_user_id == "bad":
             raise ValueError("bad user")
@@ -64,20 +59,6 @@ def test_healthz() -> None:
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-
-
-def test_send_message_requires_ws_connection() -> None:
-    client = build_client(StubAdapterService(), StubGateway(), NapcatConnectionState())
-    response = client.post("/api/v1/message/send", json={"session_id": "private_1", "content": "x"})
-    assert response.status_code == 503
-
-
-def test_send_message_validation() -> None:
-    state = NapcatConnectionState()
-    state.set(object())  # type: ignore[arg-type]
-    client = build_client(StubAdapterService(), StubGateway(), state)
-    response = client.post("/api/v1/message/send", json={"session_id": "bad", "content": "x"})
-    assert response.status_code == 422
 
 
 def test_get_user_info_requires_ws_connection() -> None:

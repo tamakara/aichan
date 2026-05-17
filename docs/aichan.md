@@ -10,21 +10,21 @@ AICHAN 由三个核心服务组成：
 - `hub-service`：业务编排中枢（提醒聚合、触发 agent、回写消息）。
 - `agent-service`：对话决策与工具调用执行层（LLM 推理、MCP 工具调用）。
 
-项目采用 `uv workspace` 管理多包，服务间通过 HTTP / WebSocket 解耦通信。
+项目采用 `uv workspace` 管理多包，服务间通过 HTTP 与 Redis Streams 解耦通信。
 
 ## 模块职责
 
 ### `adapter-service`
 
 - 接入外部 NapCat 反向 WebSocket。
-- 过滤并标准化 QQ 事件，再转发给 `hub-service`。
-- 对外提供发消息等 HTTP 接口供 `hub-service` 回写。
+- 过滤并标准化 QQ 事件，写入 Redis `qq.events`。
+- 消费 Redis `qq.actions` 并通过 OneBot action 回写 QQ。
 - 提供 MCP 工具能力（如历史消息查询）供 `agent-service` 通过 MCP Gateway 调用。
 
 ### `hub-service`
 
-- 接收 `adapter-service` 转发的提醒事件（当前以私聊为主）。
-- 组织“提醒 -> agent -> 回写”主链路。
+- 消费 `qq.events` 提醒事件（当前以私聊为主）。
+- 组织“提醒 -> agent -> 回复动作入队”主链路。
 - 作为流程中枢保持业务编排简洁，不承载模型推理逻辑。
 
 ### `agent-service`
@@ -40,11 +40,13 @@ AICHAN 由三个核心服务组成：
 flowchart LR
     U[QQ 用户] --> N[NapCat / OneBot v11]
     N <-->|Reverse WS（事件 + 动作）| A[adapter-service]
-    A -->|WS 过滤事件| H[hub-service]
+    A -->|XADD qq.events| R[(Redis Streams)]
+    R -->|XREADGROUP qq.events| H[hub-service]
     H -->|HTTP /chat| G[agent-service]
+    H -->|XADD qq.actions| R
+    R -->|XREADGROUP qq.actions| A
     G -->|SSE / MCP| M[MCP Gateway]
     M -->|docker:// 工具容器| T[Tool Servers]
-    H -->|HTTP /api/v1/message/send| A
     N --> U
 ```
 
@@ -53,25 +55,26 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph C[Docker Compose Network]
+        RD[redis:6379]
         MG[mcp-gateway:9000]
         AG[agent-service:8000]
         HB[hub-service:8020]
         AD[adapter-service:8010]
     end
 
+    AD <-->|XADD/XREADGROUP| RD
+    HB <-->|XADD/XREADGROUP| RD
     AG <-->|SSE| MG
-    AD -->|WS 下游事件| HB
     HB -->|HTTP chat| AG
-    HB -->|HTTP send| AD
 ```
 
 ## 核心业务链路（私聊场景）
 
 1. 用户私聊消息进入 NapCat。
-2. `adapter-service` 接收并过滤事件，转发给 `hub-service`。
-3. `hub-service` 调用 `agent-service /chat` 请求生成回复。
+2. `adapter-service` 接收并过滤事件，写入 Redis `qq.events`。
+3. `hub-service` 消费事件并按会话调度，调用 `agent-service /chat` 请求生成回复。
 4. `agent-service` 基于 MCP Gateway 提供的工具信息进行工具决策，并在推理过程中按需调用 MCP 工具。
-5. `hub-service` 将回复通过 `adapter-service` 回写到 QQ。
+5. `hub-service` 将回复写入 Redis `qq.actions`，由 `adapter-service` 消费后回写到 QQ。
 
 ## 文档分工
 

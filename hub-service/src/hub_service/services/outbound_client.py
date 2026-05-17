@@ -4,17 +4,18 @@ from typing import Any
 
 import httpx
 
-from ..router.schemas import AgentChatRequest, AgentChatResponse, SendMessageRequest, SendMessageResponse
+from ..router.schemas import AgentChatRequest, AgentChatResponse
+from .redis_stream import HubRedisStream
 
 
 class OutboundClient:
     def __init__(
         self,
         agent_service_url: str,
-        adapter_api_url: str,
+        redis_stream: HubRedisStream,
     ) -> None:
         self._agent_service_url = agent_service_url.rstrip("/")
-        self._adapter_api_url = adapter_api_url.rstrip("/")
+        self._redis_stream = redis_stream
         self._client = httpx.AsyncClient(timeout=None)
 
     async def call_agent(self, session_id: str, user_message: str) -> str:
@@ -27,11 +28,7 @@ class OutboundClient:
         return response.reply
 
     async def send_reply(self, session_id: str, content: str) -> None:
-        payload = SendMessageRequest(session_id=session_id, content=content)
-        data = await self._post_json(f"{self._adapter_api_url}/api/v1/message/send", payload.model_dump())
-        parsed = SendMessageResponse.model_validate(data)
-        if not parsed.ok:
-            raise ValueError("adapter send returned ok=false")
+        await self._redis_stream.enqueue_send_message(session_id=session_id, content=content)
 
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = await self._client.post(url, json=payload)

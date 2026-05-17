@@ -1,4 +1,10 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
   mcp-gateway:
     image: docker/mcp-gateway:latest
     restart: unless-stopped
@@ -28,7 +34,7 @@ services:
       context: ./adapter-service
     restart: unless-stopped
     depends_on:
-      hub-service:
+      redis:
         condition: service_started
     command:
       - adapter-service
@@ -43,6 +49,8 @@ services:
     restart: unless-stopped
     depends_on:
       agent-service:
+        condition: service_started
+      redis:
         condition: service_started
     volumes:
       - ./hub-service/config.yml:/app/hub-service/config.yml:ro

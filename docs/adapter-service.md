@@ -1,19 +1,22 @@
 # adapter-service
 
-`adapter-service` 是 AICHAN 的 QQ 协议过滤、桥接与 MCP 工具网关，负责：
-- 在 OneBot v11 与下游 WebSocket 模块之间做实时双向转发。
-- 把 QQ 历史消息查询能力暴露为 MCP 工具，供 MCP Gateway/agent 调用。
+`adapter-service` 是 AICHAN 的 QQ 协议适配层与 MCP 工具网关，负责：
+- 与 NapCat 通过单条 OneBot 反向 WebSocket 双向通信。
+- 把入站 QQ 事件标准化后写入 Redis Streams（不保存会话状态）。
+- 消费 `hub-service` 下发的动作消息并调用 NapCat action 执行。
+- 暴露消息历史查询能力供 MCP Gateway / agent 调用。
 
 ## 设计目标
 
-- 无状态过滤：仅做协议清洗与路由，不存储会话业务状态。
-- 单连接语义：NapCat 仅通过一条反向 WebSocket 与网关互通事件和动作。
-- 低耦合桥接：下游模块通过独立 WebSocket 接收过滤事件，不感知 NapCat 协议细节。
+- 无状态网关：只做协议转换与队列投递，不维护会话业务状态。
+- 单连接语义：NapCat 仅连接 `WS /napcat/ws`，事件与动作共用该连接。
+- 队列解耦：与 `hub-service` 仅通过 Redis Streams 通信，消除服务直连耦合。
 
 ## 通信拓扑
 
-- NapCat <-> `adapter-service`：单条反向 WebSocket，地址 `ws://adapter-service:8010/napcat/ws`，同一连接承载 OneBot 事件上行与 action 下发/响应
-- `adapter-service` -> `hub-service`：主动 WebSocket Client，地址由 `adapter.downstream_ws_url` 指定
+- NapCat <-> `adapter-service`：`ws://adapter-service:8010/napcat/ws`
+- `adapter-service` -> Redis Stream `qq.events`：发布标准化事件
+- Redis Stream `qq.actions` -> `adapter-service`：消费动作并执行 OneBot action
 
 ## 路由契约
 
@@ -22,12 +25,8 @@
 
 - `WS /napcat/ws`
   - NapCat 连接入口。
-  - 入站事件处理：仅接收文本消息；当前仅私聊会进入下游链路，群聊事件统一忽略；移除 CQ 码并转为纯文本后转发到下游 WebSocket。
-  - 出站动作处理：`/api/v1/message/send` 与 `/api/v1/user/{user_id}/info` 会通过该连接发送 OneBot action，并等待 `echo` 对应响应。
-
-- `POST /api/v1/message/send`
-  - 入参：`{ "session_id": "group_123|private_456", "content": "..." }`
-  - 行为：转换为 OneBot action，通过当前 NapCat WebSocket 连接下发。
+  - 入站事件处理：仅文本消息进入事件链路；群聊仍在网关层忽略，私聊事件转为统一 JSON 后写入 `qq.events`。
+  - 出站动作处理：动作消费者从 `qq.actions` 取到 `send_message` 后，通过该连接发送 OneBot action 并等待 `echo` 响应。
 
 - `GET /api/v1/user/{user_id}/info`
   - 入参：`user_id=qq_123456`
@@ -43,6 +42,15 @@
     - `private_*` -> `get_friend_msg_history`
     - 返回 `messages` 与 `next_before_message_id`
 
+## Redis 消息契约
+
+- 事件流：`qq.events`
+  - 字段：`event_id`、`session_id`、`user_id`、`content`、`source`、`message_type`、`raw_event`、`created_at`
+
+- 动作流：`qq.actions`
+  - 字段：`action_id`、`session_id`、`action_type`、`payload`、`created_at`
+  - v1 仅支持：`action_type=send_message`，`payload={"content":"..."}`
+
 ## MCP 工具契约
 
 - 工具名：`qq_get_message_history`
@@ -52,20 +60,13 @@
     - `before_message_id`：可选，正整数
   - 行为：
     - 工具参数校验通过后，调用本服务 HTTP 接口 `GET /api/v1/message/history`
-    - 返回 MCP `tool result` 的 JSON 字符串，字段固定为：
-      - `session_id`
-      - `messages`
-      - `next_before_message_id`（无更多记录时为 `null`）
+    - 返回 MCP `tool result` 的 JSON 字符串，字段固定为：`session_id`、`messages`、`next_before_message_id`
 
 ## ID 映射规则
 
 - 群会话：`group_id <-> session_id=group_{group_id}`
 - 私聊会话：`user_id <-> session_id=private_{user_id}`
 - 用户画像：`user_id <-> user_id=qq_{user_id}`
-
-## 下游事件负载
-
-转发到下游 WebSocket 的 JSON 字段：`session_id`、`user_id`、`content`、`source`、`message_type`、`raw_event`。
 
 ## 配置文件
 
@@ -75,7 +76,7 @@
 
 - 仅从本服务目录内的 `config.yml` 读取运行配置。
 - 不读取 `.env`、`.env.example`，也不支持任何环境变量别名。
-- 修改接口地址、端口、超时等参数时，只更新 `adapter-service/config.yml`。
+- 修改地址、端口、超时、队列参数时，只更新 `adapter-service/config.yml`。
 - 在 Docker Compose 中通过只读挂载该配置文件，保证容器与本地运行共享同一配置语义。
 - 配置加载阶段使用 Pydantic 严格校验：字段类型不匹配、缺失字段或出现未声明字段都会直接报错并阻断启动。
 
@@ -86,11 +87,18 @@ server:
   log_level: debug
 
 adapter:
-  downstream_ws_url: ws://hub-service:8020/qq/events
-  downstream_ws_token: ""
-  downstream_ws_open_timeout_seconds: 5
-  downstream_ws_reconnect_interval_seconds: 3
   onebot_ws_action_timeout_seconds: 5
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+  password: ""
+  events_stream: qq.events
+  actions_stream: qq.actions
+  actions_group: adapter-action-workers
+  actions_consumer: adapter-service-1
+  actions_block_ms: 2000
 
 mcp:
   base_url: http://adapter-service:8010
@@ -98,7 +106,7 @@ mcp:
   log_level: debug
 ```
 
-消息历史查询仅在 NapCat WebSocket 已连接时可用。
+消息历史查询与动作执行均依赖 NapCat WebSocket 已连接。
 
 ## 启动
 
@@ -150,4 +158,4 @@ curl http://localhost:8010/healthz
    - `messagePostFormat`: `array`
    - `enable`: `true`
 
-3. 向机器人发送私聊消息，检查 `hub-service` 日志是否出现提醒处理记录与回写日志。
+3. 向机器人发送私聊消息，检查 Redis `qq.events` 是否出现新事件，随后检查 `qq.actions` 消费与回写日志。

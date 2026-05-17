@@ -7,18 +7,19 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from .adapter_service import AdapterService
-from .downstream_ws_client import DownstreamWsClient
+from .redis_stream import AdapterRedisStream
+from .stream_models import EventStreamMessage
 
 
 class NapcatWsGateway:
     def __init__(
         self,
         adapter_service: AdapterService,
-        downstream_ws_client: DownstreamWsClient,
+        redis_stream: AdapterRedisStream,
         action_timeout_seconds: float,
     ) -> None:
         self._adapter_service = adapter_service
-        self._downstream_ws_client = downstream_ws_client
+        self._redis_stream = redis_stream
         self._action_timeout_seconds = action_timeout_seconds
         self._pending_actions: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_lock = asyncio.Lock()
@@ -68,7 +69,10 @@ class NapcatWsGateway:
             return
 
         assert clean_result.payload is not None
-        await self._downstream_ws_client.publish_event(clean_result.payload.model_dump())
+        # 适配层不维护业务态，只负责把标准化事件投递到队列供 hub 统一调度。
+        await self._redis_stream.publish_event(
+            EventStreamMessage.from_filtered_event(clean_result.payload)
+        )
 
     async def _resolve_action(self, response: dict[str, Any]) -> None:
         echo = str(response.get("echo", ""))

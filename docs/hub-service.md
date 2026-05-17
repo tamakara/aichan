@@ -1,26 +1,37 @@
 # hub-service
 
-`hub-service` 是 AICHAN 的提醒中枢，负责接收 `adapter-service` 推送的 QQ 私聊提醒，触发 `agent-service` 生成回复，并将回复回写到 `adapter-service`。
+`hub-service` 是 AICHAN 的会话编排中枢，负责消费 `adapter-service` 写入的提醒事件，按会话串行调度 `agent-service`，并把回复以动作消息写回队列。
 
 ## 设计目标
 
-- 中枢编排：集中管理“提醒 -> agent -> 回写 QQ”主链路。
-- 私聊优先：首版仅处理私聊提醒，群聊事件统一忽略。
-- 轻量状态：提醒以内存按用户分桶管理，不引入持久化依赖。
+- 中枢编排：集中管理“提醒 -> agent -> 回复动作入队”主链路。
+- 会话串行：同一 `session_id` 同一时刻仅运行一个 agent。
+- 防抖合并：首轮触发采用 1 秒（可配置）防抖窗口，减少连续短消息的重复触发。
+- 轻量状态：仅在内存维护会话状态，不做持久化恢复。
 
 ## 路由契约
 
 - `GET /healthz`
   - 返回：`{"status":"ok"}`
 
-- `WS /qq/events`
-  - 入参：`adapter-service` 转发的过滤事件 JSON。
-  - 处理：
-    - 仅处理 `message_type=private`。
-    - 记录提醒到内存（按 `user_id` 分桶）。
-    - 调用 `agent-service /chat`，将提醒内容作为 `user_message`。
-    - 将 agent 回复通过 `adapter-service /api/v1/message/send` 回写 QQ。
-  - 当前策略：失败仅记录日志，不做重试；当下游返回非 2xx 时，日志会包含下游响应体以便快速定位根因。
+> `hub-service` 不再提供 `WS /qq/events` 事件入口；事件统一从 Redis Stream 消费。
+
+## 队列契约与行为
+
+- 事件输入流：`qq.events`（Consumer Group 消费）
+  - 仅处理 `message_type=private`，群聊事件直接 ACK 丢弃。
+
+- 动作输出流：`qq.actions`
+  - 回复动作写入格式：`action_type=send_message`，`payload={"content":"..."}`。
+  - 当前策略为“入队即成功”，不等待 `adapter-service` 执行回执。
+
+## 会话调度策略
+
+- 会话状态：`running`、`pending_messages`、`debounce_deadline`、`debounce_task`（内存态）。
+- 首条消息进入会话后，启动防抖窗口（默认 1 秒）；窗口内新消息会重置截止时间。
+- 窗口到期后把 `pending_messages` 合并为一次 `user_message` 调用 `agent-service /chat`。
+- 运行期间新消息只追加到 `pending_messages`，不打断当前轮。
+- 当前轮结束后若有 pending，则重新进入“防抖 -> 下一轮”。
 
 ## 下游依赖接口
 
@@ -28,11 +39,6 @@
   - `POST /chat`
   - request: `{"session_id":"private_xxx","user_message":"..."}`
   - response: `{"reply":"..."}`
-
-- `adapter-service`
-  - `POST /api/v1/message/send`
-  - request: `{"session_id":"private_xxx","content":"..."}`
-  - response: `{"ok":true,"data":{...}}`
 
 ## 配置文件
 
@@ -42,7 +48,7 @@
 
 - 仅从本服务目录内的 `config.yml` 读取运行配置。
 - 不读取 `.env`、`.env.example`，也不支持任何环境变量别名。
-- 修改接口地址、端口、超时等参数时，只更新 `hub-service/config.yml`。
+- 修改地址、端口、防抖窗口、队列参数时，只更新 `hub-service/config.yml`。
 - 在 Docker Compose 中通过只读挂载该配置文件，保证容器与本地运行共享同一配置语义。
 - 配置加载阶段使用 Pydantic 严格校验：字段类型不匹配、缺失字段或出现未声明字段都会直接报错并阻断启动。
 
@@ -54,7 +60,18 @@ server:
 
 hub:
   agent_url: http://agent-service:8000
-  adapter_url: http://adapter-service:8010
+  debounce_seconds: 1.0
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+  password: ""
+  events_stream: qq.events
+  events_group: hub-event-workers
+  events_consumer: hub-service-1
+  events_block_ms: 2000
+  actions_stream: qq.actions
 ```
 
 ## 启动

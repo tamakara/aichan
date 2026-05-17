@@ -19,24 +19,29 @@ class ServerSettings(BaseModel):
 class AdapterSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    downstream_ws_url: StrictStr
-    downstream_ws_token: StrictStr
-    downstream_ws_open_timeout_seconds: float
-    downstream_ws_reconnect_interval_seconds: float
     onebot_ws_action_timeout_seconds: float
 
-    @field_validator(
-        "downstream_ws_open_timeout_seconds",
-        "downstream_ws_reconnect_interval_seconds",
-        "onebot_ws_action_timeout_seconds",
-        mode="before",
-    )
+    @field_validator("onebot_ws_action_timeout_seconds", mode="before")
     @classmethod
-    def _validate_numeric_timeout(cls, value: Any) -> float:
-        # 兼容 YAML 中将超时写成整数的常见写法，同时拒绝 bool/字符串，避免隐式类型漂移。
+    def _validate_timeout_seconds(cls, value: Any) -> float:
+        # 超时统一按数值配置，避免字符串/布尔被隐式转换导致运行期行为漂移。
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("必须是数字")
         return float(value)
+
+
+class RedisSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: StrictStr
+    port: StrictInt
+    db: StrictInt
+    password: StrictStr
+    events_stream: StrictStr
+    actions_stream: StrictStr
+    actions_group: StrictStr
+    actions_consumer: StrictStr
+    actions_block_ms: StrictInt
 
 
 class McpSettings(BaseModel):
@@ -60,6 +65,7 @@ class Settings(BaseModel):
 
     server: ServerSettings
     adapter: AdapterSettings
+    redis: RedisSettings
     mcp: McpSettings
 
 

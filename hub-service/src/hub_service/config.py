@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError, field_validator
 import yaml
 
 CONFIG_PATH = Path.cwd() / "hub-service" / "config.yml"
@@ -20,7 +20,29 @@ class HubSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     agent_url: StrictStr
-    adapter_url: StrictStr
+    debounce_seconds: float
+
+    @field_validator("debounce_seconds", mode="before")
+    @classmethod
+    def _validate_debounce_seconds(cls, value: Any) -> float:
+        # 防抖窗口控制触发节奏，必须是显式数值避免出现隐式类型导致策略失真。
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("必须是数字")
+        return float(value)
+
+
+class RedisSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: StrictStr
+    port: StrictInt
+    db: StrictInt
+    password: StrictStr
+    events_stream: StrictStr
+    events_group: StrictStr
+    events_consumer: StrictStr
+    events_block_ms: StrictInt
+    actions_stream: StrictStr
 
 
 class Settings(BaseModel):
@@ -28,6 +50,7 @@ class Settings(BaseModel):
 
     server: ServerSettings
     hub: HubSettings
+    redis: RedisSettings
 
 
 def _load_config() -> dict[str, Any]:

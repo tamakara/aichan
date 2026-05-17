@@ -1,20 +1,10 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-
-
-class SendMessageRequest(BaseModel):
-    session_id: str = Field(min_length=1)
-    content: str = Field(min_length=1)
-
-
-class SendMessageResponse(BaseModel):
-    ok: bool
-    data: dict[str, Any]
 
 
 class UserInfoResponse(BaseModel):
