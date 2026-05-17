@@ -38,7 +38,7 @@ AICHAN 由三个核心服务组成：
 
 ```mermaid
 flowchart LR
-    U[QQ 用户] --> N[OneBot v11 实现]
+    U[用户] --> N[OneBot v11 实现]
     N <-->|Reverse WS（事件 + 动作）| A[adapter-service]
     A -->|XADD qq.events| R[(Redis Streams)]
     R -->|XREADGROUP qq.events| H[hub-service]
