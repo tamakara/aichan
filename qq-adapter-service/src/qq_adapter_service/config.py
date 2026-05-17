@@ -1,38 +1,63 @@
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError, field_validator
 import yaml
 
 CONFIG_PATH = Path.cwd() / "qq-adapter-service" / "config.yml"
 
 
-@dataclass(frozen=True)
-class ServerSettings:
-    host: str
-    port: int
-    log_level: str
+class ServerSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: StrictStr
+    port: StrictInt
+    log_level: StrictStr
 
 
-@dataclass(frozen=True)
-class AdapterSettings:
-    downstream_ws_url: str
-    downstream_ws_token: str
+class AdapterSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    downstream_ws_url: StrictStr
+    downstream_ws_token: StrictStr
     downstream_ws_open_timeout_seconds: float
     downstream_ws_reconnect_interval_seconds: float
     onebot_ws_action_timeout_seconds: float
 
+    @field_validator(
+        "downstream_ws_open_timeout_seconds",
+        "downstream_ws_reconnect_interval_seconds",
+        "onebot_ws_action_timeout_seconds",
+        mode="before",
+    )
+    @classmethod
+    def _validate_numeric_timeout(cls, value: Any) -> float:
+        # 兼容 YAML 中将超时写成整数的常见写法，同时拒绝 bool/字符串，避免隐式类型漂移。
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("必须是数字")
+        return float(value)
 
-@dataclass(frozen=True)
-class McpSettings:
-    base_url: str
+
+class McpSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    base_url: StrictStr
     timeout_seconds: float
-    log_level: str
+    log_level: StrictStr
+
+    @field_validator("timeout_seconds", mode="before")
+    @classmethod
+    def _validate_timeout_seconds(cls, value: Any) -> float:
+        # MCP 客户端超时必须是数值，允许整数配置但统一转换为 float。
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("必须是数字")
+        return float(value)
 
 
-@dataclass(frozen=True)
-class Settings:
+class Settings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     server: ServerSettings
     adapter: AdapterSettings
     mcp: McpSettings
@@ -54,63 +79,11 @@ def _load_config() -> dict[str, Any]:
     return payload
 
 
-def _section(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
-    value = data.get(name)
-    if not isinstance(value, dict):
-        raise ValueError(f"配置缺少 `{name}` 节点: {CONFIG_PATH}")
-    return value
-
-
-def _require_str(section: Mapping[str, Any], key: str) -> str:
-    value = section.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"配置项 `{key}` 必须是字符串: {CONFIG_PATH}")
-    return value
-
-
-def _require_int(section: Mapping[str, Any], key: str) -> int:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"配置项 `{key}` 必须是整数: {CONFIG_PATH}")
-    return value
-
-
-def _require_float(section: Mapping[str, Any], key: str) -> float:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"配置项 `{key}` 必须是数字: {CONFIG_PATH}")
-    return float(value)
-
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    data = _load_config()
-    server = _section(data, "server")
-    adapter = _section(data, "adapter")
-    mcp = _section(data, "mcp")
-
-    return Settings(
-        server=ServerSettings(
-            host=_require_str(server, "host"),
-            port=_require_int(server, "port"),
-            log_level=_require_str(server, "log_level"),
-        ),
-        adapter=AdapterSettings(
-            downstream_ws_url=_require_str(adapter, "downstream_ws_url"),
-            downstream_ws_token=_require_str(adapter, "downstream_ws_token"),
-            downstream_ws_open_timeout_seconds=_require_float(
-                adapter, "downstream_ws_open_timeout_seconds"
-            ),
-            downstream_ws_reconnect_interval_seconds=_require_float(
-                adapter, "downstream_ws_reconnect_interval_seconds"
-            ),
-            onebot_ws_action_timeout_seconds=_require_float(
-                adapter, "onebot_ws_action_timeout_seconds"
-            ),
-        ),
-        mcp=McpSettings(
-            base_url=_require_str(mcp, "base_url"),
-            timeout_seconds=_require_float(mcp, "timeout_seconds"),
-            log_level=_require_str(mcp, "log_level"),
-        ),
-    )
+    data: Mapping[str, Any] = _load_config()
+    try:
+        # 配置结构统一走 Pydantic 校验，保证错误在服务启动时集中失败而非运行期分散暴露。
+        return Settings.model_validate(data)
+    except ValidationError as exc:
+        raise ValueError(f"配置校验失败: {CONFIG_PATH}\n{exc}") from exc

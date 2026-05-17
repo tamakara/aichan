@@ -38,6 +38,14 @@
 
 配置文件路径：`hub-service/config.yml`
 
+配置约束（与当前代码一致）：
+
+- 仅从本服务目录内的 `config.yml` 读取运行配置。
+- 不读取 `.env`、`.env.example`，也不支持任何环境变量别名。
+- 修改接口地址、端口、超时等参数时，只更新 `hub-service/config.yml`。
+- 在 Docker Compose 中通过只读挂载该配置文件，保证容器与本地运行共享同一配置语义。
+- 配置加载阶段使用 Pydantic 严格校验：字段类型不匹配、缺失字段或出现未声明字段都会直接报错并阻断启动。
+
 ```yaml
 server:
   host: 0.0.0.0

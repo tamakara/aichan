@@ -19,6 +19,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "mcp" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -29,6 +30,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "mcp", specifier = ">=1.13.0" },
     { name = "openai", specifier = ">=1.65.0" },
+    { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
@@ -342,6 +344,7 @@ source = { editable = "hub-service" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "websockets" },
@@ -356,6 +359,7 @@ test = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
@@ -1079,6 +1083,7 @@ dependencies = [
     { name = "httpx" },
     { name = "mcp" },
     { name = "nonebot-adapter-onebot" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "websockets" },
@@ -1096,6 +1101,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.13.0" },
     { name = "nonebot-adapter-onebot", specifier = ">=2.4.6" },
+    { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.25.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },

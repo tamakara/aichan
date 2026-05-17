@@ -119,7 +119,7 @@ class McpGateway:
         async with sse_client(self._sse_url, headers=headers) as streams:
             read_stream, write_stream = streams
             async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+                await session.initialize() 
                 yield session
 
     def _normalize_schema(self, schema: Any, tool_name: str) -> Dict[str, Any]:

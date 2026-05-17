@@ -1,32 +1,35 @@
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError
 
 CONFIG_PATH = Path.cwd() / "agent-service" / "config.yml"
 
 
-@dataclass(frozen=True)
-class ServerSettings:
-    host: str
-    port: int
-    log_level: str
+class ServerSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: StrictStr
+    port: StrictInt
+    log_level: StrictStr
 
 
-@dataclass(frozen=True)
-class AgentSettings:
-    model: str
-    max_turns: int
-    openai_api_key: str
-    openai_base_url: str
-    mcp_sse_url: str
-    mcp_auth_token: str
+class AgentSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model: StrictStr
+    max_turns: StrictInt
+    openai_api_key: StrictStr
+    openai_base_url: StrictStr
+    mcp_sse_url: StrictStr
+    mcp_auth_token: StrictStr
 
 
-@dataclass(frozen=True)
-class Settings:
+class Settings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     server: ServerSettings
     agent: AgentSettings
 
@@ -47,45 +50,11 @@ def _load_config() -> dict[str, Any]:
     return payload
 
 
-def _section(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
-    value = data.get(name)
-    if not isinstance(value, dict):
-        raise ValueError(f"配置缺少 `{name}` 节点: {CONFIG_PATH}")
-    return value
-
-
-def _require_str(section: Mapping[str, Any], key: str) -> str:
-    value = section.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"配置项 `{key}` 必须是字符串: {CONFIG_PATH}")
-    return value
-
-
-def _require_int(section: Mapping[str, Any], key: str) -> int:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"配置项 `{key}` 必须是整数: {CONFIG_PATH}")
-    return value
-
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    data = _load_config()
-    server = _section(data, "server")
-    agent = _section(data, "agent")
-
-    return Settings(
-        server=ServerSettings(
-            host=_require_str(server, "host"),
-            port=_require_int(server, "port"),
-            log_level=_require_str(server, "log_level"),
-        ),
-        agent=AgentSettings(
-            model=_require_str(agent, "model"),
-            max_turns=_require_int(agent, "max_turns"),
-            openai_api_key=_require_str(agent, "openai_api_key"),
-            openai_base_url=_require_str(agent, "openai_base_url"),
-            mcp_sse_url=_require_str(agent, "mcp_sse_url"),
-            mcp_auth_token=_require_str(agent, "mcp_auth_token"),
-        ),
-    )
+    data: Mapping[str, Any] = _load_config()
+    try:
+        # 统一交给 Pydantic 做严格结构校验，避免手写字段检查逻辑散落且难维护。
+        return Settings.model_validate(data)
+    except ValidationError as exc:
+        raise ValueError(f"配置校验失败: {CONFIG_PATH}\n{exc}") from exc
