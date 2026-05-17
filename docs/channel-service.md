@@ -84,7 +84,6 @@
 server:
   host: 0.0.0.0
   port: 8010
-  log_level: debug
 
 adapter:
   onebot_ws_action_timeout_seconds: 5
@@ -103,7 +102,6 @@ redis:
 mcp:
   base_url: http://channel-service:8010
   timeout_seconds: 5
-  log_level: debug
 ```
 
 消息历史查询与动作执行均依赖 OneBot v11 反向 WebSocket 已连接。

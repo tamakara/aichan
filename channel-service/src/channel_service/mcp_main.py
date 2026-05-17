@@ -1,6 +1,4 @@
 import json
-import logging
-
 from mcp.server.fastmcp import FastMCP
 
 from .mcp.client import AdapterClient
@@ -44,9 +42,7 @@ def create_server() -> FastMCP:
 
 
 def main() -> None:
-    settings = get_settings()
     # MCP 工具是被 gateway 以子进程拉起，统一走 stdio 传输可复用 gateway 现有链路。
-    logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     server = create_server()
     server.run(transport="stdio")
 

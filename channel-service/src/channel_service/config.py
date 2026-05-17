@@ -13,7 +13,6 @@ class ServerSettings(BaseModel):
 
     host: StrictStr
     port: StrictInt
-    log_level: StrictStr
 
 
 class AdapterSettings(BaseModel):
@@ -49,7 +48,6 @@ class McpSettings(BaseModel):
 
     base_url: StrictStr
     timeout_seconds: float
-    log_level: StrictStr
 
     @field_validator("timeout_seconds", mode="before")
     @classmethod
