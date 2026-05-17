@@ -1,7 +1,7 @@
 import asyncio
 
-from adapter_service.services.adapter_service import AdapterService
-from adapter_service.services.napcat_ws_gateway import NapcatWsGateway
+from channel_service.services.channel_service import AdapterService
+from channel_service.services.napcat_ws_gateway import NapcatWsGateway
 
 
 class StubRedisStream:
@@ -31,7 +31,7 @@ def _private_message_event() -> dict:
 def test_private_event_published_to_stream() -> None:
     redis_stream = StubRedisStream()
     gateway = NapcatWsGateway(
-        adapter_service=AdapterService(),
+        channel_service=AdapterService(),
         redis_stream=redis_stream,  # type: ignore[arg-type]
         action_timeout_seconds=3.0,
     )

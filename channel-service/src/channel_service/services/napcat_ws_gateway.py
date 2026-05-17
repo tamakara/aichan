@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import uuid
@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .adapter_service import AdapterService
+from .channel_service import AdapterService
 from .redis_stream import AdapterRedisStream
 from .stream_models import EventStreamMessage
 
@@ -14,11 +14,11 @@ from .stream_models import EventStreamMessage
 class NapcatWsGateway:
     def __init__(
         self,
-        adapter_service: AdapterService,
+        channel_service: AdapterService,
         redis_stream: AdapterRedisStream,
         action_timeout_seconds: float,
     ) -> None:
-        self._adapter_service = adapter_service
+        self._channel_service = channel_service
         self._redis_stream = redis_stream
         self._action_timeout_seconds = action_timeout_seconds
         self._pending_actions: dict[str, asyncio.Future[dict[str, Any]]] = {}
@@ -64,7 +64,7 @@ class NapcatWsGateway:
                 self._pending_actions.pop(echo, None)
 
     async def _handle_event(self, raw_event: dict[str, Any]) -> None:
-        clean_result = self._adapter_service.clean_event(raw_event)
+        clean_result = self._channel_service.clean_event(raw_event)
         if not clean_result.accepted:
             return
 

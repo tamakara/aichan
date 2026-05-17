@@ -1,5 +1,5 @@
 [project]
-name = "adapter-service"
+name = "channel-service"
 version = "0.1.0"
 description = "QQ adapter FastAPI service managed by uv."
 authors = [
@@ -25,8 +25,8 @@ test = [
 ]
 
 [project.scripts]
-adapter-service = "adapter_service.main:main"
-adapter-mcp = "adapter_service.mcp_main:main"
+channel-service = "channel_service.main:main"
+channel-mcp = "channel_service.mcp_main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

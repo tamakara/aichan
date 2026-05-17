@@ -5,7 +5,7 @@ from typing import Any, Mapping
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError, field_validator
 import yaml
 
-CONFIG_PATH = Path.cwd() / "adapter-service" / "config.yml"
+CONFIG_PATH = Path.cwd() / "channel-service" / "config.yml"
 
 
 class ServerSettings(BaseModel):

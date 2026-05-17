@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 
-from ..services.adapter_service import AdapterService
+from ..services.channel_service import AdapterService
 from ..services.connection_state import NapcatConnectionState
 from ..services.napcat_ws_gateway import NapcatWsGateway
 from .schemas import (
@@ -13,7 +13,7 @@ from .schemas import (
 
 
 def create_router(
-    adapter_service: AdapterService,
+    channel_service: AdapterService,
     napcat_ws_gateway: NapcatWsGateway,
     napcat_connection_state: NapcatConnectionState,
 ) -> APIRouter:
@@ -43,7 +43,7 @@ def create_router(
             )
 
         try:
-            outbound_action = adapter_service.build_get_user_info_action(abstract_user_id=user_id)
+            outbound_action = channel_service.build_get_user_info_action(abstract_user_id=user_id)
             result = await napcat_ws_gateway.send_action(
                 websocket=websocket,
                 action=outbound_action.action,
@@ -73,7 +73,7 @@ def create_router(
             )
 
         try:
-            outbound_action = adapter_service.build_get_history_action(
+            outbound_action = channel_service.build_get_history_action(
                 session_id=session_id,
                 limit=limit,
                 before_message_id=before_message_id,
@@ -83,7 +83,7 @@ def create_router(
                 action=outbound_action.action,
                 params=outbound_action.params,
             )
-            data = adapter_service.normalize_history_result(session_id=session_id, raw_result=result)
+            data = channel_service.normalize_history_result(session_id=session_id, raw_result=result)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         except TimeoutError as exc:

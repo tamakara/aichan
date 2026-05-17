@@ -1,6 +1,6 @@
 # AIChan
 
-基于 `uv workspace` 的多包项目，当前包含 `agent-service`、`adapter-service` 与 `hub-service` 三个核心服务。
+基于 `uv workspace` 的多包项目，当前包含 `agent-service`、`channel-service` 与 `hub-service` 三个核心服务。
 
 ## 目录结构
 
@@ -11,7 +11,7 @@
 ├─ docker-compose.yml
 ├─ docs/
 │  ├─ agent-service.md
-│  ├─ adapter-service.md
+│  ├─ channel-service.md
 │  └─ hub-service.md
 ├─ agent-service/
 │  ├─ pyproject.toml
@@ -23,11 +23,11 @@
 │  ├─ config.yml
 │  ├─ Dockerfile
 │  └─ src/hub_service
-└─ adapter-service/
+└─ channel-service/
    ├─ pyproject.toml
    ├─ config.yml
    ├─ Dockerfile
-   └─ src/adapter_service
+   └─ src/channel_service
 ```
 
 ## 配置
@@ -46,7 +46,7 @@ uv sync --all-packages
 
 ```bash
 uv run --package agent-service agent-service
-uv run --package adapter-service adapter-service
+uv run --package channel-service channel-service
 uv run --package hub-service hub-service
 ```
 
@@ -60,5 +60,5 @@ docker compose up -d --build
 
 - `docs/aichan.md`
 - `docs/agent-service.md`
-- `docs/adapter-service.md`
+- `docs/channel-service.md`
 - `docs/hub-service.md`

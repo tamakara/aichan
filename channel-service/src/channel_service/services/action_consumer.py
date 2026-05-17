@@ -5,7 +5,7 @@ import logging
 
 from pydantic import ValidationError
 
-from .adapter_service import AdapterService
+from .channel_service import AdapterService
 from .connection_state import NapcatConnectionState
 from .errors import NapcatDownstreamError
 from .napcat_ws_gateway import NapcatWsGateway
@@ -19,13 +19,13 @@ class ActionConsumerWorker:
         redis_stream: AdapterRedisStream,
         napcat_gateway: NapcatWsGateway,
         napcat_connection_state: NapcatConnectionState,
-        adapter_service: AdapterService,
+        channel_service: AdapterService,
     ) -> None:
         self._logger = logging.getLogger(__name__)
         self._redis_stream = redis_stream
         self._napcat_gateway = napcat_gateway
         self._napcat_connection_state = napcat_connection_state
-        self._adapter_service = adapter_service
+        self._channel_service = channel_service
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
 
@@ -84,7 +84,7 @@ class ActionConsumerWorker:
         if websocket is None:
             raise RuntimeError("onebot reverse ws is not connected")
 
-        outbound_action = self._adapter_service.build_send_message_action(
+        outbound_action = self._channel_service.build_send_message_action(
             session_id=action.session_id,
             content=action.payload.content,
         )

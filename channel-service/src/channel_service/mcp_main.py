@@ -15,7 +15,7 @@ def create_server() -> FastMCP:
     )
 
     mcp = FastMCP(
-        name="adapter-service",
+        name="channel-service",
         instructions="Expose QQ message history as MCP tools for agents.",
     )
 

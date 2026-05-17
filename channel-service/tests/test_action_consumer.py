@@ -1,9 +1,9 @@
 import asyncio
 
-from adapter_service.services.action_consumer import ActionConsumerWorker
-from adapter_service.services.adapter_service import AdapterService
-from adapter_service.services.connection_state import NapcatConnectionState
-from adapter_service.services.napcat_ws_gateway import NapcatWsGateway
+from channel_service.services.action_consumer import ActionConsumerWorker
+from channel_service.services.channel_service import AdapterService
+from channel_service.services.connection_state import NapcatConnectionState
+from channel_service.services.napcat_ws_gateway import NapcatWsGateway
 
 
 class StubRedisStream:
@@ -38,7 +38,7 @@ def test_action_consumer_ack_on_success() -> None:
         redis_stream=redis_stream,  # type: ignore[arg-type]
         napcat_gateway=napcat_gateway,  # type: ignore[arg-type]
         napcat_connection_state=state,
-        adapter_service=AdapterService(),
+        channel_service=AdapterService(),
     )
 
     asyncio.run(
@@ -70,7 +70,7 @@ def test_action_consumer_no_ack_when_runtime_failed() -> None:
         redis_stream=redis_stream,  # type: ignore[arg-type]
         napcat_gateway=napcat_gateway,  # type: ignore[arg-type]
         napcat_connection_state=state,
-        adapter_service=AdapterService(),
+        channel_service=AdapterService(),
     )
 
     asyncio.run(

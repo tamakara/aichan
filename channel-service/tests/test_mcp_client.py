@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from adapter_service.mcp.client import AdapterClient
+from channel_service.mcp.client import AdapterClient
 
 
 def test_get_message_history_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,7 +32,7 @@ def test_get_message_history_success(monkeypatch: pytest.MonkeyPatch) -> None:
         async def get(self, path, params=None):
             return FakeResponse()
 
-    monkeypatch.setattr("adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("channel_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
 
     async def run() -> None:
         client = AdapterClient("http://adapter", 5)
@@ -64,7 +64,7 @@ def test_get_message_history_http_error_with_detail(monkeypatch: pytest.MonkeyPa
         async def get(self, path, params=None):
             raise httpx.HTTPStatusError("bad request", request=request, response=response)
 
-    monkeypatch.setattr("adapter_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("channel_service.mcp.client.httpx.AsyncClient", FakeAsyncClient)
 
     async def run() -> None:
         client = AdapterClient("http://adapter", 5)

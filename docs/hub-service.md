@@ -1,6 +1,6 @@
 # hub-service
 
-`hub-service` 是 AICHAN 的会话编排中枢，负责消费 `adapter-service` 写入的提醒事件，按会话串行调度 `agent-service`，并把回复以动作消息写回队列。
+`hub-service` 是 AICHAN 的会话编排中枢，负责消费 `channel-service` 写入的提醒事件，按会话串行调度 `agent-service`，并把回复以动作消息写回队列。
 
 ## 设计目标
 
@@ -23,7 +23,7 @@
 
 - 动作输出流：`qq.actions`
   - 回复动作写入格式：`action_type=send_message`，`payload={"content":"..."}`。
-  - 当前策略为“入队即成功”，不等待 `adapter-service` 执行回执。
+  - 当前策略为“入队即成功”，不等待 `channel-service` 执行回执。
 
 ## 会话调度策略
 

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from adapter_service.router.router import create_router
-from adapter_service.services.connection_state import NapcatConnectionState
+from channel_service.router.router import create_router
+from channel_service.services.connection_state import NapcatConnectionState
 
 
 class StubAdapterService:
@@ -46,7 +46,7 @@ def build_client(service: StubAdapterService, gateway: StubGateway, state: Napca
     app = FastAPI()
     app.include_router(
         create_router(
-            adapter_service=service,
+            channel_service=service,
             napcat_ws_gateway=gateway,
             napcat_connection_state=state,
         )

@@ -29,22 +29,22 @@ class AdapterClient:
                 # 这里显式附带 adapter 错误体，便于 agent 判断是参数错误还是下游可重试故障。
                 detail = _try_extract_error_detail(exc.response)
                 raise RuntimeError(
-                    f"adapter-service history request failed: status={exc.response.status_code}, detail={detail}"
+                    f"channel-service history request failed: status={exc.response.status_code}, detail={detail}"
                 ) from exc
             except httpx.HTTPError as exc:
-                raise RuntimeError(f"adapter-service request failed: {exc}") from exc
+                raise RuntimeError(f"channel-service request failed: {exc}") from exc
 
         try:
             payload = response.json()
         except ValueError as exc:
-            raise RuntimeError("adapter-service returned non-json payload") from exc
+            raise RuntimeError("channel-service returned non-json payload") from exc
 
         if not isinstance(payload, dict) or not payload.get("ok"):
-            raise RuntimeError(f"adapter-service returned invalid payload: {payload}")
+            raise RuntimeError(f"channel-service returned invalid payload: {payload}")
 
         data = payload.get("data")
         if not isinstance(data, dict):
-            raise RuntimeError("adapter-service returned invalid history payload")
+            raise RuntimeError("channel-service returned invalid history payload")
 
         return data
 

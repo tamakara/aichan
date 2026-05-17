@@ -1,6 +1,6 @@
-# adapter-service
+# channel-service
 
-`adapter-service` 是 AICHAN 的 QQ 协议适配层与 MCP 工具网关，负责：
+`channel-service` 是 AICHAN 的 QQ 协议适配层与 MCP 工具网关，负责：
 - 与任意符合 OneBot v11 的实现通过单条反向 WebSocket 双向通信。
 - 把入站 QQ 事件标准化后写入 Redis Streams（不保存会话状态）。
 - 消费 `hub-service` 下发的动作消息并调用 OneBot action 执行。
@@ -14,9 +14,9 @@
 
 ## 通信拓扑
 
-- OneBot v11 客户端 <-> `adapter-service`：`ws://adapter-service:8010/onebot/v11/ws`
-- `adapter-service` -> Redis Stream `qq.events`：发布标准化事件
-- Redis Stream `qq.actions` -> `adapter-service`：消费动作并执行 OneBot action
+- OneBot v11 客户端 <-> `channel-service`：`ws://channel-service:8010/onebot/v11/ws`
+- `channel-service` -> Redis Stream `qq.events`：发布标准化事件
+- Redis Stream `qq.actions` -> `channel-service`：消费动作并执行 OneBot action
 
 ## 路由契约
 
@@ -70,13 +70,13 @@
 
 ## 配置文件
 
-配置文件路径：`adapter-service/config.yml`
+配置文件路径：`channel-service/config.yml`
 
 配置约束（与当前代码一致）：
 
 - 仅从本服务目录内的 `config.yml` 读取运行配置。
 - 不读取 `.env`、`.env.example`，也不支持任何环境变量别名。
-- 修改地址、端口、超时、队列参数时，只更新 `adapter-service/config.yml`。
+- 修改地址、端口、超时、队列参数时，只更新 `channel-service/config.yml`。
 - 在 Docker Compose 中通过只读挂载该配置文件，保证容器与本地运行共享同一配置语义。
 - 配置加载阶段使用 Pydantic 严格校验：字段类型不匹配、缺失字段或出现未声明字段都会直接报错并阻断启动。
 
@@ -97,11 +97,11 @@ redis:
   events_stream: qq.events
   actions_stream: qq.actions
   actions_group: adapter-action-workers
-  actions_consumer: adapter-service-1
+  actions_consumer: channel-service-1
   actions_block_ms: 2000
 
 mcp:
-  base_url: http://adapter-service:8010
+  base_url: http://channel-service:8010
   timeout_seconds: 5
   log_level: debug
 ```
@@ -113,36 +113,36 @@ mcp:
 在仓库根目录执行：
 
 ```bash
-uv run --package adapter-service adapter-service
+uv run --package channel-service channel-service
 ```
 
 MCP stdio 入口（供 MCP Gateway 通过 `docker://` 拉起）：
 
 ```bash
-uv run --package adapter-service adapter-mcp
+uv run --package channel-service channel-mcp
 ```
 
 Docker Compose 启动：
 
 ```bash
-docker compose up -d --build adapter-service
+docker compose up -d --build channel-service
 ```
 
 ## 容器构建稳定性
 
 - Dockerfile 改为在基础镜像内通过 `pip install uv==0.7.2` 安装 uv，避免依赖 `ghcr.io` 元数据拉取失败。
-- `adapter-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
+- `channel-service/Dockerfile` 已设置 `UV_HTTP_TIMEOUT=180` 与 `UV_HTTP_RETRIES=8`，降低网络抖动导致的依赖下载超时失败概率。
 - `uv pip install --system .` 使用 3 次重试策略，针对 `uv_build` 元数据拉取偶发超时可自动恢复。
 
 ## MCP Gateway 接入
 
-- Gateway 服务参数中增加 `docker://adapter-service:latest`。
-- `adapter-service` 容器镜像默认入口为 `adapter-mcp`（stdio MCP server）。
-- Compose 中通过 `command: ["adapter-service"]` 显式覆盖，保证业务 HTTP 服务与 MCP 工具容器职责分离。
+- Gateway 服务参数中增加 `docker://channel-service:latest`。
+- `channel-service` 容器镜像默认入口为 `channel-mcp`（stdio MCP server）。
+- Compose 中通过 `command: ["channel-service"]` 显式覆盖，保证业务 HTTP 服务与 MCP 工具容器职责分离。
 
 ## OneBot v11 反向 WS 手动对接
 
-`adapter-service` 仅要求上游实现满足 OneBot v11 事件与 action 响应字段约定，不绑定具体厂商实现（如 NapCat、LLOneBot 等）。
+`channel-service` 仅要求上游实现满足 OneBot v11 事件与 action 响应字段约定，不绑定具体厂商实现（如 NapCat、LLOneBot 等）。
 
 ## 验证步骤
 
@@ -153,7 +153,7 @@ curl http://localhost:8010/healthz
 ```
 
 2. 在你的 OneBot v11 实现中配置反向 WebSocket Client：
-   - 目标地址：`ws://adapter-service:8010/onebot/v11/ws`
+   - 目标地址：`ws://channel-service:8010/onebot/v11/ws`
    - 事件消息需包含 `post_type` 字段。
    - action 响应需包含 `echo`、`status`、`retcode` 字段。
    - 为了兼容 NoneBot 解析，建议消息段格式使用 OneBot v11 常见 `array` 形态（如果实现支持该选项）。

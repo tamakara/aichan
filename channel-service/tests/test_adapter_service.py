@@ -1,6 +1,6 @@
 import pytest
 
-from adapter_service.services.adapter_service import AdapterService
+from channel_service.services.channel_service import AdapterService
 
 
 @pytest.fixture

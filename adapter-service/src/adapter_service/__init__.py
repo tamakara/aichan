@@ -1,2 +1,0 @@
-"""adapter_service package."""
-
